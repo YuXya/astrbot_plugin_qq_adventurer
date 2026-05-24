@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #231f20;
+      --muted: #665f5a;
+      --paper: #f8f1df;
+      --gold: #b9822b;
+      --green: #245f4d;
+      --red: #9f3e39;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      width: 900px;
+      min-height: 1120px;
+      font-family: "Noto Serif SC", "Microsoft YaHei", "PingFang SC", serif;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(185, 130, 43, 0.24), transparent 28%),
+        linear-gradient(135deg, #284f48 0%, #1e3034 42%, #8f3d36 100%);
+      color: var(--ink);
+      padding: 40px;
+    }
+
+    .card {
+      min-height: 1040px;
+      border: 2px solid rgba(255, 232, 177, 0.85);
+      background:
+        linear-gradient(rgba(248, 241, 223, 0.96), rgba(248, 241, 223, 0.96)),
+        repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(40, 79, 72, 0.04) 29px);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+      padding: 42px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px solid rgba(185, 130, 43, 0.42);
+      pointer-events: none;
+    }
+
+    .header {
+      position: relative;
+      padding-bottom: 24px;
+      border-bottom: 2px solid rgba(35, 31, 32, 0.15);
+    }
+
+    .eyebrow {
+      font-size: 22px;
+      color: var(--gold);
+      font-weight: 700;
+      letter-spacing: 0;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 58px;
+      line-height: 1.08;
+      letter-spacing: 0;
+      color: var(--green);
+    }
+
+    .subtitle {
+      margin-top: 16px;
+      font-size: 25px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .scene {
+      margin-top: 36px;
+      padding: 30px;
+      background: rgba(255, 255, 255, 0.45);
+      border: 1px solid rgba(35, 31, 32, 0.13);
+      font-size: 30px;
+      line-height: 1.72;
+      color: #2c2725;
+    }
+
+    .choices {
+      display: grid;
+      gap: 18px;
+      margin-top: 34px;
+    }
+
+    .choice {
+      display: grid;
+      grid-template-columns: 64px 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 20px 22px;
+      border: 1px solid rgba(36, 95, 77, 0.25);
+      background: rgba(36, 95, 77, 0.08);
+    }
+
+    .choice-label {
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      background: var(--green);
+      color: #fff8e9;
+      font-size: 28px;
+      font-weight: 800;
+    }
+
+    .choice-text {
+      font-size: 26px;
+      line-height: 1.38;
+      color: var(--ink);
+    }
+
+    .risk {
+      min-width: 72px;
+      text-align: center;
+      border: 1px solid rgba(159, 62, 57, 0.28);
+      color: var(--red);
+      padding: 8px 12px;
+      font-size: 20px;
+      font-weight: 700;
+      background: rgba(159, 62, 57, 0.08);
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .status-item {
+      padding: 16px 18px;
+      background: rgba(185, 130, 43, 0.12);
+      border: 1px solid rgba(185, 130, 43, 0.25);
+    }
+
+    .status-key {
+      font-size: 18px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .status-value {
+      font-size: 25px;
+      font-weight: 800;
+      color: var(--green);
+    }
+
+    .footer {
+      position: absolute;
+      left: 42px;
+      right: 42px;
+      bottom: 38px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(35, 31, 32, 0.15);
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <section class="header">
+      <div class="eyebrow">QQ ADVENTURER</div>
+      <h1>{{ card.title }}</h1>
+      <div class="subtitle">{{ card.subtitle }}</div>
+    </section>
+
+    <section class="scene">{{ card.scene }}</section>
+
+    <section class="choices">
+      {% for choice in choices %}
+      <article class="choice">
+        <div class="choice-label">{{ choice.label }}</div>
+        <div class="choice-text">{{ choice.text }}</div>
+        <div class="risk">{{ choice.risk }}</div>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section class="status">
+      {% for key, value in status_items %}
+      <div class="status-item">
+        <div class="status-key">{{ key }}</div>
+        <div class="status-value">{{ value }}</div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <footer class="footer">{{ card.footer }}</footer>
+  </main>
+</body>
+</html>
+

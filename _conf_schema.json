@@ -1,0 +1,159 @@
+{
+  "llm": {
+    "description": "LLM 设置",
+    "type": "object",
+    "items": {
+      "llm_provider_id": {
+        "type": "string",
+        "description": "LLM Provider ID",
+        "default": "",
+        "hint": "留空时依次回退到当前会话 Provider 和第一个可用 Provider。"
+      },
+      "llm_retries": {
+        "type": "int",
+        "description": "LLM 重试次数",
+        "default": 2,
+        "slider": {
+          "min": 1,
+          "max": 5,
+          "step": 1
+        }
+      },
+      "llm_backoff": {
+        "type": "int",
+        "description": "LLM 重试退避秒数",
+        "default": 2,
+        "slider": {
+          "min": 1,
+          "max": 10,
+          "step": 1
+        }
+      }
+    }
+  },
+  "adventure": {
+    "description": "冒险卡片设置",
+    "type": "object",
+    "items": {
+      "default_theme": {
+        "type": "string",
+        "description": "默认冒险主题",
+        "default": "森林入口"
+      },
+      "max_choices": {
+        "type": "int",
+        "description": "最大选项数量",
+        "default": 3,
+        "slider": {
+          "min": 2,
+          "max": 4,
+          "step": 1
+        }
+      },
+      "debug_mode": {
+        "type": "bool",
+        "description": "调试模式",
+        "default": false,
+        "hint": "开启后会在插件数据目录保存 prompt 与 LLM 原始响应。"
+      },
+      "use_mock_data": {
+        "type": "bool",
+        "description": "使用静态假数据",
+        "default": false,
+        "hint": "用于先验证 HTML 转图片和发图链路，不调用 LLM。"
+      }
+    }
+  },
+  "t2i_rendering": {
+    "description": "图片渲染策略",
+    "type": "object",
+    "hint": "配置 HTML 转图片的渲染参数。第一轮优先质量，第二轮作为回退。",
+    "items": {
+      "t2i_r1_type": {
+        "type": "string",
+        "description": "第一轮：图片格式",
+        "options": [
+          "jpeg",
+          "png"
+        ],
+        "default": "png"
+      },
+      "t2i_r1_quality": {
+        "type": "int",
+        "description": "第一轮：图片质量",
+        "default": 100,
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 1
+        }
+      },
+      "t2i_r1_device_scale": {
+        "type": "string",
+        "description": "第一轮：分辨率等级",
+        "options": [
+          "normal",
+          "high",
+          "ultra"
+        ],
+        "default": "ultra"
+      },
+      "t2i_r1_timeout": {
+        "type": "int",
+        "description": "第一轮：渲染超时 (ms)",
+        "default": 50000
+      },
+      "t2i_r2_type": {
+        "type": "string",
+        "description": "第二轮：图片格式",
+        "options": [
+          "jpeg",
+          "png"
+        ],
+        "default": "jpeg"
+      },
+      "t2i_r2_quality": {
+        "type": "int",
+        "description": "第二轮：图片质量",
+        "default": 80,
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 1
+        }
+      },
+      "t2i_r2_device_scale": {
+        "type": "string",
+        "description": "第二轮：分辨率等级",
+        "options": [
+          "normal",
+          "high",
+          "ultra"
+        ],
+        "default": "high"
+      },
+      "t2i_r2_timeout": {
+        "type": "int",
+        "description": "第二轮：渲染超时 (ms)",
+        "default": 100000
+      }
+    }
+  },
+  "performance": {
+    "description": "性能设置",
+    "type": "object",
+    "items": {
+      "max_concurrent_t2i": {
+        "type": "int",
+        "description": "最大 T2I 渲染并发数",
+        "default": 1,
+        "slider": {
+          "min": 1,
+          "max": 3,
+          "step": 1
+        }
+      }
+    }
+  }
+}
+
