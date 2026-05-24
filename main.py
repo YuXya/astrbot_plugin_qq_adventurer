@@ -12,6 +12,7 @@ from .src.application.services.adventure_application_service import (
 from .src.domain.services.adventure_domain_service import AdventureDomainService
 from .src.infrastructure.analysis.llm_adventure_analyzer import LLMAdventureAnalyzer
 from .src.infrastructure.config.config_manager import ConfigManager
+from .src.infrastructure.messaging.avatar_service import QQAvatarService
 from .src.infrastructure.messaging.history_reader import ChatHistoryReader
 from .src.infrastructure.messaging.message_sender import MessageSender
 from .src.infrastructure.reporting.generators import ReportGenerator
@@ -26,6 +27,7 @@ class QQAdventurer(Star):
     report_generator: ReportGenerator
     adventure_service: AdventureApplicationService
     history_reader: ChatHistoryReader
+    avatar_service: QQAvatarService
     message_sender: MessageSender
 
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -49,6 +51,7 @@ class QQAdventurer(Star):
             context,
             max_history_messages=self.config_manager.get_max_history_messages(),
         )
+        self.avatar_service = QQAvatarService(context, self.config_manager)
         self.message_sender = MessageSender()
 
     @filter.command("异世界转生", alias={"reincarnate"})
@@ -56,7 +59,7 @@ class QQAdventurer(Star):
         self,
         event: AstrMessageEvent,
     ) -> AsyncGenerator:
-        """根据触发者的群聊发言生成一张异世界转生人物卡。用法：/异世界转生"""
+        """根据触发者的群聊发言和 QQ 头像生成一张异世界转生人物卡。用法：/异世界转生"""
         event.should_call_llm(True)
 
         group_id = self._get_group_id_from_event(event)
@@ -66,18 +69,24 @@ class QQAdventurer(Star):
 
         user_id = self._get_sender_id_from_event(event)
         nickname = self._get_sender_name_from_event(event)
+        avatar_url = self.avatar_service.build_avatar_url(user_id)
+
         player_messages = await self.history_reader.read_player_messages(
             event,
             group_id=group_id,
             user_id=user_id,
         )
+        avatar_caption = await self.avatar_service.describe_avatar(avatar_url)
 
         if player_messages:
-            yield event.plain_result(
-                f"正在读取 {len(player_messages)} 条发言，准备转生人物卡..."
-            )
+            progress = f"正在读取 {len(player_messages)} 条发言"
         else:
-            yield event.plain_result("没有读到足够发言，先按玩具测试样例生成转生人物卡...")
+            progress = "没有读到足够发言，先按玩具测试样例"
+        if avatar_caption:
+            progress += "，并已完成头像转述"
+        elif avatar_url:
+            progress += "，头像将只用于卡面显示"
+        yield event.plain_result(f"{progress}，准备转生人物卡...")
 
         umo = getattr(event, "unified_msg_origin", None)
         if not umo:
@@ -91,6 +100,8 @@ class QQAdventurer(Star):
             nickname=nickname,
             umo=umo,
             player_messages=player_messages,
+            avatar_url=avatar_url,
+            avatar_caption=avatar_caption,
         )
 
         if result.error:

@@ -32,6 +32,7 @@ class ReportGenerator(ICardGenerator):
             card=card,
             stats_items=list(card.stats.items()),
             likes=card.likes,
+            avatar_url=card.avatar_url,
         )
         if not html_content:
             return None, None

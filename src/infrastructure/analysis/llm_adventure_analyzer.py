@@ -17,6 +17,8 @@ class LLMAdventureAnalyzer(IAdventureAnalysisProvider):
         nickname: str | None = None,
         umo: str | None = None,
         player_messages: list[str] | None = None,
+        avatar_url: str | None = None,
+        avatar_caption: str | None = None,
     ) -> AdventureAnalysisResult:
         card, usage, raw_response = await self.analyzer.analyze(
             theme,
@@ -24,6 +26,8 @@ class LLMAdventureAnalyzer(IAdventureAnalysisProvider):
             nickname=nickname,
             umo=umo,
             player_messages=player_messages,
+            avatar_url=avatar_url,
+            avatar_caption=avatar_caption,
         )
         if card is None:
             raise ValueError("LLM 响应无法解析为异世界转生人物卡 JSON")

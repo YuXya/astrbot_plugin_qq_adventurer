@@ -33,11 +33,17 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
         user_id: str | None,
         nickname: str | None,
         player_messages: list[str] | None = None,
+        avatar_caption: str | None = None,
     ) -> str:
         pass
 
     @abstractmethod
-    def create_data_object(self, data: dict) -> TDataObject:
+    def create_data_object(
+        self,
+        data: dict,
+        avatar_url: str | None = None,
+        avatar_caption: str | None = None,
+    ) -> TDataObject:
         pass
 
     async def analyze(
@@ -47,8 +53,16 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
         nickname: str | None = None,
         umo: str | None = None,
         player_messages: list[str] | None = None,
+        avatar_url: str | None = None,
+        avatar_caption: str | None = None,
     ) -> tuple[TDataObject | None, TokenUsage, str]:
-        prompt = self.build_prompt(theme, user_id, nickname, player_messages)
+        prompt = self.build_prompt(
+            theme,
+            user_id,
+            nickname,
+            player_messages,
+            avatar_caption,
+        )
         system_prompt = await self._build_system_prompt(umo)
         prompt = self._apply_persona_reinforcement(prompt, system_prompt)
         if self.config_manager.get_debug_mode():
@@ -77,7 +91,11 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
             logger.error(f"{self.get_data_type()} JSON 解析失败: {error}")
             return None, token_usage, result_text
 
-        return self.create_data_object(parsed), token_usage, result_text
+        return (
+            self.create_data_object(parsed, avatar_url, avatar_caption),
+            token_usage,
+            result_text,
+        )
 
     def _apply_persona_reinforcement(self, prompt: str, system_prompt: str | None) -> str:
         if not system_prompt or not system_prompt.strip():

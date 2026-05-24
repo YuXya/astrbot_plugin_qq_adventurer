@@ -15,6 +15,20 @@ class ConfigManager:
     def get_llm_provider_id(self) -> str:
         return str(self._get_group("llm").get("llm_provider_id", "")).strip()
 
+    def get_enable_avatar_caption(self) -> bool:
+        return bool(self._get_group("vision").get("enable_avatar_caption", False))
+
+    def get_vision_provider_id(self) -> str:
+        return str(self._get_group("vision").get("vision_provider_id", "")).strip()
+
+    def get_avatar_caption_prompt(self) -> str:
+        return str(
+            self._get_group("vision").get(
+                "avatar_caption_prompt",
+                "请用中文简短描述这个 QQ 头像中的外貌特征，只描述头像画面，不判断真人身份。",
+            )
+        ).strip()
+
     def get_keep_original_persona(self) -> bool:
         return bool(
             self._get_group("analysis_features").get("keep_original_persona", False)

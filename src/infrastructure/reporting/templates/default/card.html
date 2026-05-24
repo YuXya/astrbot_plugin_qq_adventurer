@@ -97,6 +97,14 @@
       color: #fff;
       font-size: 42px;
       font-weight: 900;
+      overflow: hidden;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
     .identity {
@@ -111,9 +119,7 @@
       background: rgba(255, 255, 255, 0.62);
     }
 
-    .id-item {
-      padding: 16px 18px;
-    }
+    .id-item { padding: 16px 18px; }
 
     .label {
       font-size: 17px;
@@ -141,8 +147,8 @@
     }
 
     .section-text {
-      font-size: 26px;
-      line-height: 1.56;
+      font-size: 25px;
+      line-height: 1.52;
       color: #2f3445;
     }
 
@@ -219,7 +225,13 @@
         <h1>{{ card.title }}</h1>
         <div class="subtitle">{{ card.subtitle }}</div>
       </div>
-      <div class="avatar">転</div>
+      <div class="avatar">
+        {% if avatar_url %}
+        <img src="{{ avatar_url }}" alt="{{ card.target_name }}">
+        {% else %}
+        転
+        {% endif %}
+      </div>
     </section>
 
     <section class="identity">

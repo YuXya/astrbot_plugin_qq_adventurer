@@ -5,13 +5,24 @@ import asyncio
 from ....utils.logger import logger
 
 
-async def get_provider_id_with_fallback(context, config_manager, umo: str | None = None) -> str | None:
+async def get_provider_id_with_fallback(
+    context,
+    config_manager,
+    umo: str | None = None,
+) -> str | None:
     configured = config_manager.get_llm_provider_id()
     if configured:
         try:
             provider = context.get_provider_by_id(provider_id=configured)
             if provider:
                 return configured
+        except TypeError:
+            try:
+                provider = context.get_provider_by_id(configured)
+                if provider:
+                    return configured
+            except Exception as exc:
+                logger.warning(f"配置的 Provider 不可用: {configured}, {exc}")
         except Exception as exc:
             logger.warning(f"配置的 Provider 不可用: {configured}, {exc}")
 
@@ -108,4 +119,3 @@ def extract_token_usage(response) -> dict[str, int]:
         "completion_tokens": int(completion_tokens or 0),
         "total_tokens": int(total_tokens or 0),
     }
-

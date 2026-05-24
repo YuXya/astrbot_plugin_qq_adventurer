@@ -30,12 +30,19 @@ class AdventureApplicationService:
         nickname: str | None = None,
         umo: str | None = None,
         player_messages: list[str] | None = None,
+        avatar_url: str | None = None,
+        avatar_caption: str | None = None,
     ) -> AdventureExecutionResult:
         theme = (theme or self.config_manager.get_default_theme()).strip()
 
         try:
             if self.config_manager.get_use_mock_data():
-                card = self.domain_service.build_mock_card(theme, nickname)
+                card = self.domain_service.build_mock_card(
+                    theme,
+                    nickname,
+                    avatar_url=avatar_url,
+                    avatar_caption=avatar_caption,
+                )
                 raw_response = ""
             else:
                 analysis = await self.llm_analyzer.analyze_adventure(
@@ -44,6 +51,8 @@ class AdventureApplicationService:
                     nickname=nickname,
                     umo=umo,
                     player_messages=player_messages,
+                    avatar_url=avatar_url,
+                    avatar_caption=avatar_caption,
                 )
                 card = analysis.card
                 raw_response = analysis.raw_response

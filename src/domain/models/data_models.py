@@ -24,6 +24,8 @@ class ReincarnationCard:
     likes: list[str] = field(default_factory=list)
     quote: str = ""
     footer: str = ""
+    avatar_url: str = ""
+    avatar_caption: str = ""
 
     def to_text(self) -> str:
         stats_text = " / ".join(

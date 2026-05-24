@@ -2,7 +2,7 @@
 
 这是一个 AstrBot 插件玩具版，用于跑通：
 
-群聊命令 -> 尝试读取触发者最近发言 -> LLM 生成标准 JSON -> 解析为人物卡对象 -> HTML 模板渲染 -> HTML 转图片 -> QQ 群发送图片
+群聊命令 -> 读取触发者最近发言 -> 获取 QQ 头像 -> 可选头像视觉转述 -> LLM 生成标准 JSON -> HTML 模板渲染 -> HTML 转图片 -> QQ 群发送图片
 
 ## 命令
 
@@ -10,11 +10,11 @@
 /异世界转生
 ```
 
-插件会以发送命令的群友为目标，尽量读取该群友最近的群聊发言，推断性格和表达气质，然后生成一张异世界转生人物卡。
+插件会以发送命令的群友为目标，尽量读取该群友最近的群聊发言，推断性格和表达气质，然后生成一张异世界转生人物卡。右上角会显示发送者 QQ 头像。
 
-当前外貌设定固定要求为“可可爱爱的异世界小萝莉风格”，但性格会根据聊天记录变化。
+如果开启头像转述并配置了支持图片输入的视觉 Provider，插件会先描述 QQ 头像中的画面特征，再让人物卡 LLM 保留这些核心外貌特征，并根据聊天风格扩写异世界服装、饰品、动作和气质。性格仍主要来自聊天记录。
 
-## 原项目的聊天记录路线
+## 聊天记录路线
 
 参考项目不是只读取当前命令那一条消息：
 
@@ -22,7 +22,15 @@
 - Telegram：平时拦截群消息，写入 AstrBot 的 `message_history_manager`，分析时再读取。
 - 分析前会把群消息清洗、过滤命令和机器人消息，再交给统计与 LLM 分析模块。
 
-本插件第一版只实现够用路线：优先尝试 OneBot 的 `get_group_msg_history`，读取最近若干条群消息后筛选当前触发者的发言。读取失败时不会崩溃，会按玩具样例生成。
+本插件第一版只实现 QQ 够用路线：优先尝试 OneBot 的 `get_group_msg_history`，读取最近若干条群消息后筛选当前触发者的发言。读取失败时不会崩溃，会按玩具样例生成。
+
+## 头像与外貌
+
+- QQ 头像 URL 由发送者 QQ 号生成。
+- 头像转述默认关闭。
+- 开启 `vision.enable_avatar_caption` 后，需要在 `vision.vision_provider_id` 选择支持图片输入的 Provider。
+- 头像转述失败时，只跳过头像外貌参考，不影响卡片生成。
+- `appearance` 是幻想角色设定，不声称是真实用户外貌。
 
 ## JSON 输出格式
 
@@ -35,7 +43,7 @@ LLM 被要求只返回：
   "target_name": "群友名称",
   "race": "转生种族",
   "class_name": "异世界职阶",
-  "appearance": "可爱小萝莉外貌描述",
+  "appearance": "保留头像核心特征，并根据聊天风格扩写出的异世界可爱外貌设定",
   "personality": "根据聊天记录推断出的性格",
   "talent": "一个和聊天风格有关的异世界天赋",
   "stats": {
@@ -50,7 +58,7 @@ LLM 被要求只返回：
 }
 ```
 
-代码里仍然保留了双重提示约束：
+代码里仍然保留双重提示约束：
 
 - system prompt 放人格。
 - user prompt 再重复一次人格和格式优先级。
@@ -59,11 +67,14 @@ LLM 被要求只返回：
 
 ## 配置
 
-- `llm.llm_provider_id`：使用原项目同款 `_special: select_provider`，在面板里选择 Provider。
+- `llm.llm_provider_id`：人物卡生成 Provider，使用 `_special: select_provider`。
+- `vision.enable_avatar_caption`：是否启用头像图像转述，默认关闭。
+- `vision.vision_provider_id`：头像转述 Provider，使用 `_special: select_provider`，请选择支持图片输入的模型。
+- `vision.avatar_caption_prompt`：头像转述提示词。
 - `analysis_features.use_plugin_specific_persona`：强制使用插件指定人格。
-- `analysis_features.plugin_specific_persona_id`：使用原项目同款 `_special: select_persona`，在面板里选择人格。
+- `analysis_features.plugin_specific_persona_id`：使用 `_special: select_persona` 选择人格。
 - `adventure.max_history_messages`：读取群历史消息上限。
-- `adventure.use_mock_data`：静态假数据模式，不调用 LLM，也不读取真实聊天记录。
+- `adventure.use_mock_data`：静态假数据模式，不调用人物卡 LLM。
 - `t2i_rendering`：HTML 转图片策略，第一轮失败后会尝试第二轮。
 
 ## 测试
@@ -75,6 +86,7 @@ LLM 被要求只返回：
 /异世界转生
 ```
 
-3. 确认机器人能发送图片卡片。
+3. 确认机器人能发送图片卡片，右上角显示发送者 QQ 头像。
 4. 关闭 `use_mock_data`，确认 LLM 能返回 JSON 并正常渲染。
-5. 开启 `debug_mode` 后，可在插件数据目录查看最终 prompt 和 LLM 原始响应。
+5. 开启 `vision.enable_avatar_caption` 并选择视觉 Provider，确认 `appearance` 参考头像转述结果。
+6. 开启 `debug_mode` 后，可在插件数据目录查看最终 prompt 和 LLM 原始响应。
