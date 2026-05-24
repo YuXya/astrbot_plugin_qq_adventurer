@@ -2,6 +2,9 @@ from __future__ import annotations
 
 
 class ConfigManager:
+    CARD_RENDER_WIDTH = 900
+    CARD_RENDER_HEIGHT = 1180
+
     def __init__(self, config):
         self.config = config
 
@@ -68,9 +71,16 @@ class ConfigManager:
 
     def get_t2i_rendering_strategies(self) -> list[dict]:
         group = self._get_group("t2i_rendering")
+        clip = {
+            "x": 0,
+            "y": 0,
+            "width": self.CARD_RENDER_WIDTH,
+            "height": self.CARD_RENDER_HEIGHT,
+        }
         return [
             {
                 "full_page": True,
+                "clip": dict(clip),
                 "type": group.get("t2i_r1_type", "png"),
                 "quality": group.get("t2i_r1_quality", 100),
                 "device_scale_factor_level": group.get(
@@ -80,6 +90,7 @@ class ConfigManager:
             },
             {
                 "full_page": True,
+                "clip": dict(clip),
                 "type": group.get("t2i_r2_type", "jpeg"),
                 "quality": group.get("t2i_r2_quality", 80),
                 "device_scale_factor_level": group.get("t2i_r2_device_scale", "high"),
