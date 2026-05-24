@@ -61,11 +61,6 @@
     "description": "异世界转生卡设置",
     "type": "object",
     "items": {
-      "default_theme": {
-        "type": "string",
-        "description": "默认触发主题",
-        "default": "/异世界转生"
-      },
       "max_history_messages": {
         "type": "int",
         "description": "读取群历史消息上限",

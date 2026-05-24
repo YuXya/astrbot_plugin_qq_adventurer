@@ -33,7 +33,7 @@ class AdventureApplicationService:
         avatar_url: str | None = None,
         avatar_caption: str | None = None,
     ) -> AdventureExecutionResult:
-        theme = (theme or self.config_manager.get_default_theme()).strip()
+        theme = (theme or "/异世界转生").strip()
 
         try:
             if self.config_manager.get_use_mock_data():

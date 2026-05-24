@@ -4,6 +4,9 @@ from ..models.data_models import ReincarnationCard
 
 
 class AdventureDomainService:
+    DEFAULT_STATS = {"魔力": "B", "力量": "D", "敏捷": "C", "体质": "E"}
+    STAT_KEYS = ("魔力", "力量", "敏捷", "体质")
+
     def normalize_card(
         self,
         raw: dict,
@@ -62,7 +65,7 @@ class AdventureDomainService:
             )[:260],
             personality="表面一本正经，实际很容易被新鲜事吸引；喜欢吐槽，但关键时刻会认真帮大家收拾局面。",
             talent="把群里的零碎话题炼成奇妙道具，并用一句吐槽点亮全场。",
-            stats={"魔力": "A-", "吐槽": "S", "幸运": "B+", "可爱": "SS"},
+            stats={"魔力": "A-", "力量": "F", "敏捷": "C", "体质": "E"},
             likes=["热闹话题", "甜点", "被认真回应"],
             quote="才、才不是特地来救你的，只是顺路而已！",
             footer="玩具模式：未调用人物卡 LLM，也未读取真实聊天记录。",
@@ -73,16 +76,16 @@ class AdventureDomainService:
     @staticmethod
     def _normalize_stats(raw_stats: object) -> dict[str, str]:
         if not isinstance(raw_stats, dict):
-            return {"魔力": "B", "吐槽": "A", "幸运": "B", "可爱": "SS"}
+            return dict(AdventureDomainService.DEFAULT_STATS)
         result: dict[str, str] = {}
-        for key, value in raw_stats.items():
-            clean_key = str(key).strip()
-            clean_value = str(value).strip()
-            if clean_key and clean_value:
-                result[clean_key[:8]] = clean_value[:16]
-            if len(result) >= 6:
-                break
-        return result or {"魔力": "B", "吐槽": "A", "幸运": "B", "可爱": "SS"}
+        for key in AdventureDomainService.STAT_KEYS:
+            clean_value = str(raw_stats.get(key, "")).strip()
+            result[key] = (
+                clean_value[:16]
+                if clean_value
+                else AdventureDomainService.DEFAULT_STATS[key]
+            )
+        return result
 
     @staticmethod
     def _normalize_likes(raw_likes: object) -> list[str]:

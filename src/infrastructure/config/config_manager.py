@@ -2,9 +2,6 @@ from __future__ import annotations
 
 
 class ConfigManager:
-    CARD_RENDER_WIDTH = 900
-    CARD_RENDER_HEIGHT = 1180
-
     def __init__(self, config):
         self.config = config
 
@@ -55,11 +52,6 @@ class ConfigManager:
     def get_llm_backoff(self) -> int:
         return int(self._get_group("llm").get("llm_backoff", 2) or 2)
 
-    def get_default_theme(self) -> str:
-        return str(
-            self._get_group("adventure").get("default_theme", "/异世界转生")
-        ).strip()
-
     def get_max_history_messages(self) -> int:
         return int(self._get_group("adventure").get("max_history_messages", 120) or 120)
 
@@ -71,16 +63,9 @@ class ConfigManager:
 
     def get_t2i_rendering_strategies(self) -> list[dict]:
         group = self._get_group("t2i_rendering")
-        clip = {
-            "x": 0,
-            "y": 0,
-            "width": self.CARD_RENDER_WIDTH,
-            "height": self.CARD_RENDER_HEIGHT,
-        }
         return [
             {
                 "full_page": True,
-                "clip": dict(clip),
                 "type": group.get("t2i_r1_type", "png"),
                 "quality": group.get("t2i_r1_quality", 100),
                 "device_scale_factor_level": group.get(
@@ -90,7 +75,6 @@ class ConfigManager:
             },
             {
                 "full_page": True,
-                "clip": dict(clip),
                 "type": group.get("t2i_r2_type", "jpeg"),
                 "quality": group.get("t2i_r2_quality", 80),
                 "device_scale_factor_level": group.get("t2i_r2_device_scale", "high"),

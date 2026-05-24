@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=900, initial-scale=1.0">
   <style>
     :root {
       color-scheme: light;
@@ -20,11 +21,13 @@
     body {
       margin: 0;
       width: 900px;
-      height: 1180px;
-      overflow: hidden;
+      min-width: 900px;
+      max-width: 900px;
+      overflow-x: hidden;
     }
 
     body {
+      min-height: 1180px;
       font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
       background:
         radial-gradient(circle at 16% 12%, rgba(240, 138, 168, 0.34), transparent 24%),
@@ -42,6 +45,8 @@
       padding: 40px;
       position: relative;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .card::before {
@@ -210,10 +215,7 @@
     }
 
     .footer {
-      position: absolute;
-      left: 40px;
-      right: 40px;
-      bottom: 34px;
+      margin-top: auto;
       padding-top: 18px;
       border-top: 1px solid rgba(141, 122, 230, 0.18);
       color: var(--muted);
