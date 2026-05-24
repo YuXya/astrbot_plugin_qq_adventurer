@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Generic, TypeVar
 
 from astrbot.api.star import StarTools
@@ -28,7 +27,13 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
         pass
 
     @abstractmethod
-    def build_prompt(self, theme: str, user_id: str | None, nickname: str | None) -> str:
+    def build_prompt(
+        self,
+        theme: str,
+        user_id: str | None,
+        nickname: str | None,
+        player_messages: list[str] | None = None,
+    ) -> str:
         pass
 
     @abstractmethod
@@ -41,8 +46,9 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
         user_id: str | None = None,
         nickname: str | None = None,
         umo: str | None = None,
+        player_messages: list[str] | None = None,
     ) -> tuple[TDataObject | None, TokenUsage, str]:
-        prompt = self.build_prompt(theme, user_id, nickname)
+        prompt = self.build_prompt(theme, user_id, nickname, player_messages)
         system_prompt = await self._build_system_prompt(umo)
         prompt = self._apply_persona_reinforcement(prompt, system_prompt)
         if self.config_manager.get_debug_mode():
@@ -82,7 +88,7 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
             "[SYSTEM_IDENTITY]\n"
             f"{persona_content}\n\n"
             "[TASK]\n"
-            "请以以上人格、语气和观察方式完成下面的互动冒险卡片生成任务。\n"
+            "请以上方人格、语气和观察方式完成下面的异世界转生人物卡生成任务。\n"
             "人格只能影响 JSON 字段值中的文风、措辞和叙事视角，绝不能改变输出结构。\n\n"
             "[FORMAT_PRIORITY]\n"
             "输出格式优先级高于人格扮演。最终回复必须是一个可被 json.loads 直接解析的纯 JSON 对象。\n"
@@ -101,7 +107,7 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
             logger.warning(f"保存调试文件失败: {exc}")
 
     async def _build_system_prompt(self, umo: str | None) -> str:
-        default_prompt = "你是一个擅长生成短篇互动冒险卡片的游戏主持人。"
+        default_prompt = "你是一个擅长根据群友聊天风格生成异世界转生人物卡的轻小说设定师。"
         persona_mgr = getattr(self.context, "persona_manager", None)
         if persona_mgr is None:
             return default_prompt
@@ -136,7 +142,7 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
         if isinstance(persona_prompt, str) and persona_prompt.strip():
             return (
                 f"{persona_prompt.strip()}\n\n"
-                "请在保持上述人格风格的同时，严格完成互动冒险卡片生成任务。"
+                "请在保持上述人格风格的同时，严格完成异世界转生人物卡生成任务。"
                 "最终输出仍必须是纯 JSON，不要添加 Markdown 或解释。"
             )
 

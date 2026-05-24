@@ -1,82 +1,79 @@
 from __future__ import annotations
 
-from ..models.data_models import AdventureCard, AdventureChoice
+from ..models.data_models import ReincarnationCard
 
 
 class AdventureDomainService:
-    def __init__(self, max_choices: int = 3):
-        self.max_choices = max(2, min(max_choices, 4))
+    def normalize_card(self, raw: dict) -> ReincarnationCard:
+        title = self._clean_text(raw.get("title"), "异世界转生人物卡")
+        subtitle = self._clean_text(raw.get("subtitle"), "新的命运正在发芽")
+        target_name = self._clean_text(raw.get("target_name"), "神秘群友")
+        race = self._clean_text(raw.get("race"), "糖霜小魔女")
+        class_name = self._clean_text(raw.get("class_name"), "见习冒险者")
+        appearance = self._clean_text(
+            raw.get("appearance"),
+            "软乎乎的银白短发，圆圆眼睛，披着过大的斗篷，看起来像刚从童话书里跑出来。",
+        )
+        personality = self._clean_text(raw.get("personality"), "好奇、嘴硬、容易被夸奖哄开心")
+        talent = self._clean_text(raw.get("talent"), "能把平平无奇的话题变成热闹的小事件")
+        quote = self._clean_text(raw.get("quote"), "哼，我才不是迷路了，只是在巡视新世界！")
+        footer = self._clean_text(raw.get("footer"), "根据最近群聊发言生成，仅供娱乐。")
 
-    def normalize_card(self, raw: dict) -> AdventureCard:
-        title = self._clean_text(raw.get("title"), "未命名冒险")
-        subtitle = self._clean_text(raw.get("subtitle"), "新的旅途正在展开")
-        scene = self._clean_text(raw.get("scene"), "你站在岔路前，空气里有未说出口的预感。")
-        footer = self._clean_text(raw.get("footer"), "输入下一步行动，继续推进冒险。")
-
-        choices = self._normalize_choices(raw.get("choices"))
-        status = self._normalize_status(raw.get("status"))
-
-        return AdventureCard(
+        return ReincarnationCard(
             title=title[:32],
             subtitle=subtitle[:48],
-            scene=scene[:420],
-            choices=choices,
-            status=status,
+            target_name=target_name[:32],
+            race=race[:24],
+            class_name=class_name[:24],
+            appearance=appearance[:220],
+            personality=personality[:180],
+            talent=talent[:120],
+            stats=self._normalize_stats(raw.get("stats")),
+            likes=self._normalize_likes(raw.get("likes")),
+            quote=quote[:80],
             footer=footer[:80],
         )
 
-    def build_mock_card(self, theme: str) -> AdventureCard:
-        return AdventureCard(
-            title="边境旅人的第一夜",
-            subtitle=f"主题：{theme}",
-            scene=(
-                "暮色落在旧驿站的木牌上。远处的林线像一堵黑色城墙，"
-                "而你的口袋里只有一枚发烫的铜钥匙。酒馆老板压低声音说："
-                "今晚月亮升起前，最好决定自己要相信谁。"
+    def build_mock_card(self, theme: str, nickname: str | None = None) -> ReincarnationCard:
+        target_name = nickname or "测试群友"
+        return ReincarnationCard(
+            title="异世界转生人物卡",
+            subtitle=f"{target_name} 的今日新身份",
+            target_name=target_name,
+            race="奶油星尘族",
+            class_name="迷你咒语收藏家",
+            appearance=(
+                "浅粉色蓬松短发，眼睛像刚洗过的葡萄糖，披着过大的星星斗篷，"
+                "背着比本人还认真的小书包，整个人可爱得像会发光的棉花糖。"
             ),
-            choices=[
-                AdventureChoice("A", "询问酒馆老板钥匙的来历", "低"),
-                AdventureChoice("B", "趁夜进入森林寻找锁孔", "高"),
-                AdventureChoice("C", "去马厩检查是否有人跟踪", "中"),
-            ],
-            status={"体力": "8/10", "金币": "12", "线索": "铜钥匙"},
-            footer="选择一个行动，下一张卡片会继续故事。",
+            personality="表面一本正经，实际很容易被新鲜事吸引；喜欢吐槽，但关键时刻会认真帮大家收拾局面。",
+            talent="把群里的零碎话题炼成奇妙道具，并用一句吐槽点亮全场。",
+            stats={"魔力": "A-", "吐槽": "S", "幸运": "B+", "可爱": "SS"},
+            likes=["热闹话题", "甜点", "被认真回应"],
+            quote="才、才不是特地来救你的，只是顺路而已！",
+            footer="玩具模式：未调用 LLM，也未读取真实聊天记录。",
         )
 
-    def _normalize_choices(self, raw_choices: object) -> list[AdventureChoice]:
-        choices: list[AdventureChoice] = []
-        if isinstance(raw_choices, list):
-            for index, item in enumerate(raw_choices[: self.max_choices]):
-                if not isinstance(item, dict):
-                    continue
-                label = self._clean_text(item.get("label"), chr(ord("A") + index))
-                text = self._clean_text(item.get("text"), "")
-                risk = self._clean_text(item.get("risk"), "未知")
-                if text:
-                    choices.append(
-                        AdventureChoice(label=label[:4], text=text[:80], risk=risk[:12])
-                    )
-
-        while len(choices) < 2:
-            label = chr(ord("A") + len(choices))
-            fallback = "谨慎观察周围" if label == "A" else "向前迈出一步"
-            choices.append(AdventureChoice(label, fallback, "未知"))
-
-        return choices
-
     @staticmethod
-    def _normalize_status(raw_status: object) -> dict[str, str]:
-        if not isinstance(raw_status, dict):
-            return {"体力": "10/10", "线索": "无"}
+    def _normalize_stats(raw_stats: object) -> dict[str, str]:
+        if not isinstance(raw_stats, dict):
+            return {"魔力": "B", "吐槽": "A", "幸运": "B", "可爱": "SS"}
         result: dict[str, str] = {}
-        for key, value in raw_status.items():
+        for key, value in raw_stats.items():
             clean_key = str(key).strip()
             clean_value = str(value).strip()
             if clean_key and clean_value:
-                result[clean_key[:10]] = clean_value[:24]
-            if len(result) >= 4:
+                result[clean_key[:8]] = clean_value[:16]
+            if len(result) >= 6:
                 break
-        return result or {"体力": "10/10", "线索": "无"}
+        return result or {"魔力": "B", "吐槽": "A", "幸运": "B", "可爱": "SS"}
+
+    @staticmethod
+    def _normalize_likes(raw_likes: object) -> list[str]:
+        if not isinstance(raw_likes, list):
+            return ["甜点", "冒险", "被夸奖"]
+        likes = [str(item).strip()[:16] for item in raw_likes if str(item).strip()]
+        return likes[:4] or ["甜点", "冒险", "被夸奖"]
 
     @staticmethod
     def _clean_text(value: object, default: str) -> str:
@@ -84,4 +81,3 @@ class AdventureDomainService:
             return default
         text = str(value).strip()
         return text if text else default
-

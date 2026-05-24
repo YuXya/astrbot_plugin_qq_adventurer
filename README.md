@@ -1,222 +1,80 @@
-# QQ Adventurer
+# QQ 异世界转生人物卡
 
-QQ Adventurer 是一个 AstrBot 插件示例，用于把一次命令触发的互动冒险生成流程跑通：
+这是一个 AstrBot 插件玩具版，用于跑通：
 
-```text
-群聊命令 -> LLM 生成标准 JSON -> 解析为领域对象 -> HTML 模板渲染 -> HTML 转图片 -> 发送图片卡片
-```
+群聊命令 -> 尝试读取触发者最近发言 -> LLM 生成标准 JSON -> 解析为人物卡对象 -> HTML 模板渲染 -> HTML 转图片 -> QQ 群发送图片
 
-当前版本优先复刻 `astrbot_plugin_qq_group_daily_analysis` 的分层代码组织方式，但只实现冒险卡片所需的最小功能。
-
-## 功能
-
-- `/冒险 [主题或行动]`：生成一张互动冒险图片卡片。
-- `/adventure [theme]`：英文别名。
-- 支持 `use_mock_data` 静态假数据模式，用于先测试 HTML 转图片和发图链路。
-- 支持 LLM Provider 回退：插件配置 Provider -> 当前会话 Provider -> 第一个可用 Provider。
-- 支持两轮 T2I 渲染参数：第一轮质量优先，第二轮回退。
-
-## 目录结构
+## 命令
 
 ```text
-astrbot_plugin_qq_adventurer/
-├── main.py
-├── metadata.yaml
-├── _conf_schema.json
-├── requirements.txt
-└── src/
-    ├── application/
-    │   └── services/adventure_application_service.py
-    ├── domain/
-    │   ├── models/data_models.py
-    │   ├── repositories/
-    │   └── services/adventure_domain_service.py
-    ├── infrastructure/
-    │   ├── analysis/
-    │   ├── config/
-    │   ├── messaging/
-    │   └── reporting/
-    ├── shared/
-    └── utils/
+/异世界转生
 ```
 
-职责分工：
+插件会以发送命令的群友为目标，尽量读取该群友最近的群聊发言，推断性格和表达气质，然后生成一张异世界转生人物卡。
 
-- `main.py`：AstrBot 插件入口、命令注册、事件信息读取、调用应用服务。
-- `application`：编排一次冒险卡片生成流程。
-- `domain`：定义卡片数据模型、接口和纯业务规则。
-- `infrastructure/analysis`：构建 prompt、调用 LLM、解析 JSON。
-- `infrastructure/reporting`：渲染 HTML，并调用 AstrBot `html_render` 转图片。
-- `infrastructure/messaging`：发送图片，失败时文本兜底。
+当前外貌设定固定要求为“可可爱爱的异世界小萝莉风格”，但性格会根据聊天记录变化。
 
-## 运行流程
+## 原项目的聊天记录路线
 
-用户在群聊中发送：
+参考项目不是只读取当前命令那一条消息：
 
-```text
-/冒险 森林入口
-```
+- QQ / OneBot：通过 `get_group_msg_history` 主动拉取群历史。
+- Telegram：平时拦截群消息，写入 AstrBot 的 `message_history_manager`，分析时再读取。
+- 分析前会把群消息清洗、过滤命令和机器人消息，再交给统计与 LLM 分析模块。
 
-插件流程：
+本插件第一版只实现够用路线：优先尝试 OneBot 的 `get_group_msg_history`，读取最近若干条群消息后筛选当前触发者的发言。读取失败时不会崩溃，会按玩具样例生成。
 
-1. `main.py` 的 `adventure()` 被触发。
-2. 调用 `event.should_call_llm(True)`，阻止 AstrBot 默认 LLM 闲聊回复。
-3. `AdventureApplicationService.execute_adventure()` 接管流程。
-4. `AdventureAnalyzer.build_prompt()` 生成给 LLM 的提示词。
-5. LLM 返回 JSON 文本。
-6. `json_utils.parse_json_object_response()` 提取并解析 JSON。
-7. `AdventureDomainService.normalize_card()` 补默认值并裁剪字段长度。
-8. `ReportGenerator.generate_image_card()` 渲染 `card.html`。
-9. 调用 `self.html_render(html_content, {}, False, image_options)` 转图片。
-10. `MessageSender.send_image_or_text()` 发送图片；失败则发送文本版卡片。
+## JSON 输出格式
 
-## LLM 输出格式
-
-当前 prompt 要求 LLM 只返回一个 JSON 对象：
+LLM 被要求只返回：
 
 ```json
 {
-  "title": "卡片标题",
+  "title": "异世界转生人物卡",
   "subtitle": "一句副标题",
-  "scene": "当前场景描述，120 到 220 字",
-  "choices": [
-    {
-      "label": "A",
-      "text": "行动选项",
-      "risk": "低"
-    },
-    {
-      "label": "B",
-      "text": "行动选项",
-      "risk": "中"
-    }
-  ],
-  "status": {
-    "体力": "10/10",
-    "线索": "无"
+  "target_name": "群友名称",
+  "race": "转生种族",
+  "class_name": "异世界职阶",
+  "appearance": "可爱小萝莉外貌描述",
+  "personality": "根据聊天记录推断出的性格",
+  "talent": "一个和聊天风格有关的异世界天赋",
+  "stats": {
+    "魔力": "A",
+    "吐槽": "S",
+    "幸运": "B",
+    "可爱": "SS"
   },
-  "footer": "一句结尾提示"
+  "likes": ["喜欢物1", "喜欢物2", "喜欢物3"],
+  "quote": "一句符合该角色的可爱台词",
+  "footer": "一句底部说明"
 }
 ```
 
-当前版本使用以下方式提高稳定性：
+代码里仍然保留了双重提示约束：
 
-- prompt 明确要求“只输出合法 JSON，不要 Markdown，不要解释”。
-- 解析前会移除 ```json 代码块标记。
-- 会从回复中提取第一个 `{ ... }` JSON 对象。
-- 使用 `json.loads()` 校验格式。
-- 字段缺失时由领域服务补默认值。
+- system prompt 放人格。
+- user prompt 再重复一次人格和格式优先级。
 
-注意：当前版本还没有接入原项目那种 `response_format/json_schema` 强约束，因此 LLM 仍有可能输出坏 JSON。若出现解析失败，插件会返回文本错误，不会让命令静默失败。
+也就是：人格可以影响文风，但不能破坏 JSON 结构。
 
-## 配置项
+## 配置
 
-配置文件：`_conf_schema.json`
-
-### LLM
-
-- `llm.llm_provider_id`：LLM Provider ID（用于所有分析任务），使用 AstrBot 面板的 Provider 选择器；留空时使用回退策略。
-- `llm.llm_retries`：LLM 调用重试次数。
-- `llm.llm_backoff`：LLM 重试退避秒数。
-
-### 分析风格
-
-- `analysis_features.keep_original_persona`：继承会话人设风格。开启后会尝试识别当前群聊会话或对话的人格设定。
-- `analysis_features.use_plugin_specific_persona`：强制使用插件指定人格。开启后优先使用下方选择的人格。
-- `analysis_features.plugin_specific_persona_id`：插件指定人格 ID，使用 AstrBot 面板的人格选择器。
-
-### 冒险卡片
-
-- `adventure.default_theme`：未传主题时使用的默认主题。
-- `adventure.max_choices`：生成选项数量上限，范围 2 到 4。
-- `adventure.debug_mode`：开启后保存 prompt 和 LLM 原始响应。
-- `adventure.use_mock_data`：开启后不调用 LLM，使用静态假数据。
-
-### HTML 转图片
-
-- `t2i_rendering.t2i_r1_*`：第一轮渲染参数，默认 PNG、高质量。
-- `t2i_rendering.t2i_r2_*`：第二轮回退参数，默认 JPEG、较低压力。
-- `performance.max_concurrent_t2i`：限制同时进行的 T2I 渲染数量。
+- `llm.llm_provider_id`：使用原项目同款 `_special: select_provider`，在面板里选择 Provider。
+- `analysis_features.use_plugin_specific_persona`：强制使用插件指定人格。
+- `analysis_features.plugin_specific_persona_id`：使用原项目同款 `_special: select_persona`，在面板里选择人格。
+- `adventure.max_history_messages`：读取群历史消息上限。
+- `adventure.use_mock_data`：静态假数据模式，不调用 LLM，也不读取真实聊天记录。
+- `t2i_rendering`：HTML 转图片策略，第一轮失败后会尝试第二轮。
 
 ## 测试
 
-推荐按下面顺序测试。
-
-### 1. 静态卡片链路
-
-在插件配置中开启：
+1. 开启 `adventure.use_mock_data`。
+2. 在 QQ 群发送：
 
 ```text
-adventure.use_mock_data = true
+/异世界转生
 ```
 
-然后在 QQ 群发送：
-
-```text
-/冒险 测试
-```
-
-预期：
-
-- 机器人先回复“正在展开冒险卡片...”
-- 随后发送一张冒险图片卡片
-- 此阶段不依赖 LLM，只验证命令、HTML 渲染、T2I、发图链路
-
-### 2. LLM JSON 链路
-
-关闭：
-
-```text
-adventure.use_mock_data = false
-```
-
-发送：
-
-```text
-/冒险 森林入口
-```
-
-预期：
-
-- LLM 返回符合格式的 JSON
-- 插件解析为 `AdventureCard`
-- 成功生成图片卡片
-
-### 3. 调试 LLM 输出
-
-开启：
-
-```text
-adventure.debug_mode = true
-```
-
-再次发送 `/冒险 测试`。
-
-预期：
-
-- 插件数据目录下生成 `debug_data/adventure_prompt.txt`
-- 插件数据目录下生成 `debug_data/adventure_response.txt`
-- 可用这两个文件检查 LLM 实际收到了什么、返回了什么
-
-### 4. 本地语法检查
-
-在插件目录运行：
-
-```powershell
-python -m compileall .
-python -c "import json; json.load(open('_conf_schema.json', encoding='utf-8')); print('json ok')"
-```
-
-预期：
-
-- Python 文件能正常编译
-- `_conf_schema.json` 能正常解析
-
-## 下一步
-
-为了更接近原项目的可靠性，后续建议补上：
-
-- 把冒险 prompt 从代码移动到 `_conf_schema.json`，支持面板编辑。
-- 增加 `structured_output_schema.py`。
-- 调用 LLM 时传 `response_format=json_schema`。
-- 解析失败后增加一次“只修复 JSON”的重试。
+3. 确认机器人能发送图片卡片。
+4. 关闭 `use_mock_data`，确认 LLM 能返回 JSON 并正常渲染。
+5. 开启 `debug_mode` 后，可在插件数据目录查看最终 prompt 和 LLM 原始响应。

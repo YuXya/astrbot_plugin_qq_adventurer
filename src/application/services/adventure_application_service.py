@@ -29,12 +29,13 @@ class AdventureApplicationService:
         user_id: str | None = None,
         nickname: str | None = None,
         umo: str | None = None,
+        player_messages: list[str] | None = None,
     ) -> AdventureExecutionResult:
         theme = (theme or self.config_manager.get_default_theme()).strip()
 
         try:
             if self.config_manager.get_use_mock_data():
-                card = self.domain_service.build_mock_card(theme)
+                card = self.domain_service.build_mock_card(theme, nickname)
                 raw_response = ""
             else:
                 analysis = await self.llm_analyzer.analyze_adventure(
@@ -42,6 +43,7 @@ class AdventureApplicationService:
                     user_id=user_id,
                     nickname=nickname,
                     umo=umo,
+                    player_messages=player_messages,
                 )
                 card = analysis.card
                 raw_response = analysis.raw_response
@@ -67,10 +69,9 @@ class AdventureApplicationService:
                 raw_response=raw_response,
             )
         except Exception as exc:
-            logger.error(f"执行冒险卡片流程失败: {exc}", exc_info=True)
+            logger.error(f"执行异世界转生卡片流程失败: {exc}", exc_info=True)
             return AdventureExecutionResult(
                 success=False,
-                text=f"冒险生成失败：{exc}",
+                text=f"异世界转生卡生成失败：{exc}",
                 error=str(exc),
             )
-

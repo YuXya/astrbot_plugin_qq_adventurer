@@ -1,9 +1,6 @@
 name: astrbot_plugin_qq_adventurer
-display_name: QQ 冒险者卡片
-desc: "命令触发 LLM 生成冒险剧情 JSON，并渲染为 HTML 图片卡片发送。"
-version: v0.1.0
+display_name: QQ 异世界转生人物卡
+desc: "命令触发 LLM 读取群友最近发言，生成异世界转生人物卡 JSON，并渲染为 HTML 图片卡片发送。"
+version: 0.1.0
 author: YuXya
-astrbot_version: ">=4.16.0"
-support_platforms:
-  - aiocqhttp
-
+repo: ""

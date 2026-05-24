@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from astrbot.api.message_components import Image
 
-from ...domain.models.data_models import AdventureCard
+from ...domain.models.data_models import ReincarnationCard
 from ...utils.logger import logger
 
 
@@ -11,7 +11,7 @@ class MessageSender:
         self,
         event,
         image_path: str | None,
-        fallback_card: AdventureCard | None,
+        fallback_card: ReincarnationCard | None,
         fallback_text: str = "",
     ):
         if image_path:
@@ -24,6 +24,5 @@ class MessageSender:
         if not text and fallback_card:
             text = fallback_card.to_text()
         if not text:
-            text = "冒险卡片生成失败，请稍后再试。"
+            text = "异世界转生人物卡生成失败，请稍后再试。"
         return event.plain_result(text)
-

@@ -13,6 +13,6 @@ class IAdventureAnalysisProvider(ABC):
         user_id: str | None = None,
         nickname: str | None = None,
         umo: str | None = None,
+        player_messages: list[str] | None = None,
     ) -> AdventureAnalysisResult:
         pass
-

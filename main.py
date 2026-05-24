@@ -12,6 +12,7 @@ from .src.application.services.adventure_application_service import (
 from .src.domain.services.adventure_domain_service import AdventureDomainService
 from .src.infrastructure.analysis.llm_adventure_analyzer import LLMAdventureAnalyzer
 from .src.infrastructure.config.config_manager import ConfigManager
+from .src.infrastructure.messaging.history_reader import ChatHistoryReader
 from .src.infrastructure.messaging.message_sender import MessageSender
 from .src.infrastructure.reporting.generators import ReportGenerator
 from .src.utils.logger import logger
@@ -24,15 +25,14 @@ class QQAdventurer(Star):
     llm_analyzer: LLMAdventureAnalyzer
     report_generator: ReportGenerator
     adventure_service: AdventureApplicationService
+    history_reader: ChatHistoryReader
     message_sender: MessageSender
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
         self.config_manager = ConfigManager(config)
-        self.domain_service = AdventureDomainService(
-            max_choices=self.config_manager.get_max_choices()
-        )
+        self.domain_service = AdventureDomainService()
         self.llm_analyzer = LLMAdventureAnalyzer(
             context,
             self.config_manager,
@@ -45,42 +45,56 @@ class QQAdventurer(Star):
             self.llm_analyzer,
             self.report_generator,
         )
+        self.history_reader = ChatHistoryReader(
+            context,
+            max_history_messages=self.config_manager.get_max_history_messages(),
+        )
         self.message_sender = MessageSender()
 
-    @filter.command("冒险", alias={"adventure"})
-    async def adventure(
+    @filter.command("异世界转生", alias={"reincarnate"})
+    async def reincarnate(
         self,
         event: AstrMessageEvent,
-        theme: str = "",
     ) -> AsyncGenerator:
-        """生成一张冒险卡片。用法: /冒险 [主题或行动]"""
+        """根据触发者的群聊发言生成一张异世界转生人物卡。用法：/异世界转生"""
         event.should_call_llm(True)
 
-        theme = (theme or self.config_manager.get_default_theme()).strip()
         group_id = self._get_group_id_from_event(event)
         if not group_id:
-            yield event.plain_result("请在群聊中使用 /冒险，这样我才能把卡片发回群里。")
+            yield event.plain_result("请在群聊中使用 /异世界转生，这样我才能读取群聊上下文。")
             return
-
-        yield event.plain_result("正在展开冒险卡片...")
 
         user_id = self._get_sender_id_from_event(event)
         nickname = self._get_sender_name_from_event(event)
+        player_messages = await self.history_reader.read_player_messages(
+            event,
+            group_id=group_id,
+            user_id=user_id,
+        )
+
+        if player_messages:
+            yield event.plain_result(
+                f"正在读取 {len(player_messages)} 条发言，准备转生人物卡..."
+            )
+        else:
+            yield event.plain_result("没有读到足够发言，先按玩具测试样例生成转生人物卡...")
+
         umo = getattr(event, "unified_msg_origin", None)
         if not umo:
             platform_id = self._get_platform_id_from_event(event)
             umo = f"{platform_id}:GroupMessage:{group_id}"
 
         result = await self.adventure_service.execute_adventure(
-            theme=theme,
+            theme="/异世界转生",
             html_render_func=self.html_render,
             user_id=user_id,
             nickname=nickname,
             umo=umo,
+            player_messages=player_messages,
         )
 
         if result.error:
-            logger.warning(f"冒险卡片流程结束但存在错误: {result.error}")
+            logger.warning(f"异世界转生人物卡流程结束但存在错误: {result.error}")
 
         yield await self.message_sender.send_image_or_text(
             event,
@@ -126,4 +140,3 @@ class QQAdventurer(Star):
                 except Exception:
                     pass
         return None
-

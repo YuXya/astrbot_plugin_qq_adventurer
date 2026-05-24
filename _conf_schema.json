@@ -8,7 +8,7 @@
         "description": "LLM Provider ID（用于所有分析任务）",
         "_special": "select_provider",
         "default": "",
-        "hint": "选择用于冒险卡片生成的 LLM Provider。留空则使用当前会话的默认 Provider"
+        "hint": "选择用于异世界转生人物卡生成的 LLM Provider。留空则使用当前会话的默认 Provider。"
       },
       "llm_retries": {
         "type": "int",
@@ -33,22 +33,22 @@
     }
   },
   "adventure": {
-    "description": "冒险卡片设置",
+    "description": "异世界转生卡设置",
     "type": "object",
     "items": {
       "default_theme": {
         "type": "string",
-        "description": "默认冒险主题",
-        "default": "森林入口"
+        "description": "默认触发主题",
+        "default": "/异世界转生"
       },
-      "max_choices": {
+      "max_history_messages": {
         "type": "int",
-        "description": "最大选项数量",
-        "default": 3,
+        "description": "读取群历史消息上限",
+        "default": 120,
         "slider": {
-          "min": 2,
-          "max": 4,
-          "step": 1
+          "min": 20,
+          "max": 500,
+          "step": 20
         }
       },
       "debug_mode": {
@@ -61,7 +61,7 @@
         "type": "bool",
         "description": "使用静态假数据",
         "default": false,
-        "hint": "用于先验证 HTML 转图片和发图链路，不调用 LLM。"
+        "hint": "用于先验证 HTML 转图片和发图链路，不调用 LLM，也不读取真实聊天记录。"
       }
     }
   },
@@ -73,13 +73,13 @@
         "description": "继承会话人设风格",
         "type": "bool",
         "default": false,
-        "hint": "【优先级2】开启后将自动尝试识别当前群聊会话（或对话）的人格设定。若该群已设置人设，则冒险卡片会尽量模拟该人设的口吻进行回复。注意：此开关在“强制使用插件指定人格”关闭时才会生效。"
+        "hint": "【优先级2】开启后将自动尝试识别当前群聊会话（或对话）的人格设定。若该群已设置人设，则人物卡会尽量模拟该人设的口吻进行回复。注意：此开关在“强制使用插件指定人格”关闭时才会生效。"
       },
       "use_plugin_specific_persona": {
         "description": "强制使用插件指定人格",
         "type": "bool",
         "default": false,
-        "hint": "【优先级1：核心开关】若开启，将完全忽略当前群聊的人格设定，统一强制使用下方选择的“插件指定人格 ID”进行冒险卡片生成。适用于希望所有冒险卡片保持某种统一固定风格的情况。"
+        "hint": "【优先级1：核心开关】若开启，将完全忽略当前群聊的人格设定，统一强制使用下方选择的“插件指定人格 ID”进行人物卡生成。"
       },
       "plugin_specific_persona_id": {
         "description": "插件指定人格 ID",
@@ -98,10 +98,7 @@
       "t2i_r1_type": {
         "type": "string",
         "description": "第一轮：图片格式",
-        "options": [
-          "jpeg",
-          "png"
-        ],
+        "options": ["jpeg", "png"],
         "default": "png"
       },
       "t2i_r1_quality": {
@@ -117,11 +114,7 @@
       "t2i_r1_device_scale": {
         "type": "string",
         "description": "第一轮：分辨率等级",
-        "options": [
-          "normal",
-          "high",
-          "ultra"
-        ],
+        "options": ["normal", "high", "ultra"],
         "default": "ultra"
       },
       "t2i_r1_timeout": {
@@ -132,10 +125,7 @@
       "t2i_r2_type": {
         "type": "string",
         "description": "第二轮：图片格式",
-        "options": [
-          "jpeg",
-          "png"
-        ],
+        "options": ["jpeg", "png"],
         "default": "jpeg"
       },
       "t2i_r2_quality": {
@@ -151,11 +141,7 @@
       "t2i_r2_device_scale": {
         "type": "string",
         "description": "第二轮：分辨率等级",
-        "options": [
-          "normal",
-          "high",
-          "ultra"
-        ],
+        "options": ["normal", "high", "ultra"],
         "default": "high"
       },
       "t2i_r2_timeout": {

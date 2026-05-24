@@ -4,12 +4,11 @@ import asyncio
 import base64
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 from astrbot.api.star import StarTools
 
-from ...domain.models.data_models import AdventureCard
+from ...domain.models.data_models import ReincarnationCard
 from ...domain.repositories.card_repository import ICardGenerator
 from ...utils.logger import logger
 from .templates import HTMLTemplates
@@ -25,14 +24,14 @@ class ReportGenerator(ICardGenerator):
 
     async def generate_image_card(
         self,
-        card: AdventureCard,
+        card: ReincarnationCard,
         html_render_func: Any,
     ) -> tuple[str | None, str | None]:
         html_content = self.html_templates.render_template(
             "card.html",
             card=card,
-            choices=card.choices,
-            status_items=list(card.status.items()),
+            stats_items=list(card.stats.items()),
+            likes=card.likes,
         )
         if not html_content:
             return None, None
@@ -67,7 +66,7 @@ class ReportGenerator(ICardGenerator):
         suffix = ".jpg" if str(image_type).lower() in {"jpg", "jpeg"} else ".png"
         output_dir = StarTools.get_data_dir() / "cards"
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"adventure_{int(time.time() * 1000)}{suffix}"
+        output_path = output_dir / f"reincarnation_{int(time.time() * 1000)}{suffix}"
 
         try:
             if isinstance(image_data, bytes):
@@ -89,4 +88,3 @@ class ReportGenerator(ICardGenerator):
             logger.error(f"保存图片失败: {exc}", exc_info=True)
 
         return None
-

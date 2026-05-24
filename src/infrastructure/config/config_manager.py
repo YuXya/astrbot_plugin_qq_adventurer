@@ -40,11 +40,11 @@ class ConfigManager:
 
     def get_default_theme(self) -> str:
         return str(
-            self._get_group("adventure").get("default_theme", "森林入口")
+            self._get_group("adventure").get("default_theme", "/异世界转生")
         ).strip()
 
-    def get_max_choices(self) -> int:
-        return int(self._get_group("adventure").get("max_choices", 3) or 3)
+    def get_max_history_messages(self) -> int:
+        return int(self._get_group("adventure").get("max_history_messages", 120) or 120)
 
     def get_debug_mode(self) -> bool:
         return bool(self._get_group("adventure").get("debug_mode", False))
