@@ -115,9 +115,15 @@ astrbot_plugin_qq_adventurer/
 
 ### LLM
 
-- `llm.llm_provider_id`：指定 LLM Provider ID，留空时使用回退策略。
+- `llm.llm_provider_id`：LLM Provider ID（用于所有分析任务），使用 AstrBot 面板的 Provider 选择器；留空时使用回退策略。
 - `llm.llm_retries`：LLM 调用重试次数。
 - `llm.llm_backoff`：LLM 重试退避秒数。
+
+### 分析风格
+
+- `analysis_features.keep_original_persona`：继承会话人设风格。开启后会尝试识别当前群聊会话或对话的人格设定。
+- `analysis_features.use_plugin_specific_persona`：强制使用插件指定人格。开启后优先使用下方选择的人格。
+- `analysis_features.plugin_specific_persona_id`：插件指定人格 ID，使用 AstrBot 面板的人格选择器。
 
 ### 冒险卡片
 
@@ -214,4 +220,3 @@ python -c "import json; json.load(open('_conf_schema.json', encoding='utf-8')); 
 - 增加 `structured_output_schema.py`。
 - 调用 LLM 时传 `response_format=json_schema`。
 - 解析失败后增加一次“只修复 JSON”的重试。
-

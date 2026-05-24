@@ -15,6 +15,23 @@ class ConfigManager:
     def get_llm_provider_id(self) -> str:
         return str(self._get_group("llm").get("llm_provider_id", "")).strip()
 
+    def get_keep_original_persona(self) -> bool:
+        return bool(
+            self._get_group("analysis_features").get("keep_original_persona", False)
+        )
+
+    def get_use_plugin_specific_persona(self) -> bool:
+        return bool(
+            self._get_group("analysis_features").get(
+                "use_plugin_specific_persona", False
+            )
+        )
+
+    def get_plugin_specific_persona_id(self) -> str:
+        return str(
+            self._get_group("analysis_features").get("plugin_specific_persona_id", "")
+        ).strip()
+
     def get_llm_retries(self) -> int:
         return int(self._get_group("llm").get("llm_retries", 2) or 2)
 
@@ -58,4 +75,3 @@ class ConfigManager:
 
     def get_t2i_max_concurrent(self) -> int:
         return int(self._get_group("performance").get("max_concurrent_t2i", 1) or 1)
-
