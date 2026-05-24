@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "forest",
+      "title": "森林",
+      "enabled": true,
+      "strategy": "keyword",
+      "keys": ["森林", "树林", "林地"],
+      "order": 100,
+      "content": "森林是异世界常见的初级冒险区域，常见狼、树精、蘑菇妖和迷路商人。夜晚的森林更危险，狼群会沿着溪流和兽径活动。"
+    },
+    {
+      "id": "wolf",
+      "title": "狼",
+      "enabled": true,
+      "strategy": "keyword",
+      "keys": ["狼", "狼群"],
+      "order": 110,
+      "content": "狼是森林常见魔物，通常群居，栖息在阴暗林地、山洞和溪流附近。它们敏捷高、力量中等，害怕火光和强烈铃声。"
+    }
+  ]
+}

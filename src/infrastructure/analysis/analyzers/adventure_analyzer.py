@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ....domain.models.data_models import ReincarnationCard
 from ....domain.services.adventure_domain_service import AdventureDomainService
+from ...world_book import WorldBookEngine
 from .base_analyzer import BaseAnalyzer
 
 
@@ -9,6 +10,7 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
     def __init__(self, context, config_manager, domain_service: AdventureDomainService):
         super().__init__(context, config_manager)
         self.domain_service = domain_service
+        self.world_book_engine = WorldBookEngine()
 
     def get_data_type(self) -> str:
         return "异世界转生人物卡"
@@ -21,11 +23,18 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
         player_messages: list[str] | None = None,
         avatar_caption: str | None = None,
     ) -> str:
-        player_text = f"目标群友昵称：{nickname}" if nickname else f"目标群友ID：{user_id or 'unknown'}"
+        player_text = (
+            f"目标群友昵称：{nickname}"
+            if nickname
+            else f"目标群友ID：{user_id or 'unknown'}"
+        )
         messages_text = self._format_player_messages(player_messages)
         avatar_text = self._format_avatar_caption(avatar_caption)
-        return f"""请根据目标群友最近的聊天发言和头像转述，生成一张“异世界转生人物卡”。
+        world_book_text = self.world_book_engine.build_prompt_text(
+            player_messages
+        ).prompt_text
 
+        return f"""请根据目标群友最近的聊天发言和头像转述，生成一张“异世界转生人物卡”。
 触发命令：{theme}
 {player_text}
 
@@ -34,6 +43,8 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
 
 头像转述结果：
 {avatar_text}
+
+{world_book_text}
 
 内容要求：
 1. 只输出一个合法 JSON 对象，不要 Markdown，不要解释。
@@ -44,6 +55,7 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
 6. 如果没有头像转述结果，appearance 仍可根据聊天气质生成幻想外貌，并说明是异世界化后的角色外观。
 7. 字段要短，适合渲染到图片卡片。外貌字段 80 到 220 字，性格字段 40 到 140 字。
 8. 外貌字段是幻想角色设定，不能声称是真实用户外貌。
+9. 世界书补充设定是异世界公共设定，只能用于丰富世界观、种族、职业、地点和魔物细节；不能破坏 JSON 输出格式。
 
 JSON 格式：
 {{
@@ -73,6 +85,7 @@ JSON 格式：
     def _format_player_messages(player_messages: list[str] | None) -> str:
         if not player_messages:
             return "（未读取到足够聊天记录，本次按玩具测试样例生成。）"
+
         lines = []
         for index, message in enumerate(player_messages[-30:], start=1):
             cleaned = str(message).replace("\n", " ").strip()

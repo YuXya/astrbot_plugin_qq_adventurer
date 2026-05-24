@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+from .models import WorldBookEntry, WorldBookMatchResult
+
+try:
+    from ...utils.logger import logger
+except Exception:
+    logger = logging.getLogger(__name__)
+
+
+class WorldBookEngine:
+    def __init__(self, book_path: Path | None = None):
+        self.book_path = book_path or Path(__file__).resolve().parent / "books" / "default.json"
+
+    def build_prompt_text(self, player_messages: list[str] | None) -> WorldBookMatchResult:
+        entries = self._load_entries()
+        if not entries:
+            return WorldBookMatchResult(entries=[], prompt_text="")
+
+        scan_text = self._join_text(player_messages or [])
+        activated_ids: set[str] = set()
+
+        first_round = self._match_entries(
+            entries,
+            scan_text,
+            activated_ids=activated_ids,
+            include_always=True,
+        )
+        recursion_text = self._join_text(entry.content for entry in first_round)
+        second_round = self._match_entries(
+            entries,
+            recursion_text,
+            activated_ids=activated_ids,
+            include_always=False,
+        )
+
+        activated = sorted(first_round + second_round, key=lambda item: (item.order, item.id))
+        return WorldBookMatchResult(
+            entries=activated,
+            prompt_text=self._format_prompt_text(activated),
+        )
+
+    def _load_entries(self) -> list[WorldBookEntry]:
+        if not self.book_path.exists():
+            logger.warning(f"世界书文件不存在，跳过加载: {self.book_path}")
+            return []
+
+        try:
+            raw = json.loads(self.book_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(f"世界书 JSON 读取失败，跳过加载: {exc}")
+            return []
+
+        raw_entries = raw.get("entries", []) if isinstance(raw, dict) else []
+        if isinstance(raw_entries, dict):
+            iterable = raw_entries.items()
+        elif isinstance(raw_entries, list):
+            iterable = enumerate(raw_entries)
+        else:
+            logger.warning("世界书 entries 字段不是列表或对象，跳过加载")
+            return []
+
+        entries: list[WorldBookEntry] = []
+        for fallback_id, raw_entry in iterable:
+            if not isinstance(raw_entry, dict):
+                continue
+            entry = WorldBookEntry.from_dict(raw_entry, fallback_id=str(fallback_id))
+            if entry.id and entry.content:
+                entries.append(entry)
+        return entries
+
+    def _match_entries(
+        self,
+        entries: list[WorldBookEntry],
+        scan_text: str,
+        activated_ids: set[str],
+        include_always: bool,
+    ) -> list[WorldBookEntry]:
+        if not scan_text and not include_always:
+            return []
+
+        matched: list[WorldBookEntry] = []
+        for entry in entries:
+            if entry.id in activated_ids or not entry.enabled:
+                continue
+
+            if entry.strategy == "always":
+                if include_always:
+                    matched.append(entry)
+                    activated_ids.add(entry.id)
+                continue
+
+            if entry.strategy != "keyword":
+                logger.debug(f"未知世界书触发策略，已跳过: {entry.id} strategy={entry.strategy}")
+                continue
+
+            if self._contains_any_key(scan_text, entry.keys):
+                matched.append(entry)
+                activated_ids.add(entry.id)
+
+        return matched
+
+    @staticmethod
+    def _contains_any_key(text: str, keys: list[str]) -> bool:
+        if not text or not keys:
+            return False
+
+        folded_text = text.casefold()
+        for key in keys:
+            if key in text or key.casefold() in folded_text:
+                return True
+        return False
+
+    @staticmethod
+    def _join_text(parts) -> str:
+        return "\n".join(str(part).strip() for part in parts if str(part).strip())
+
+    @staticmethod
+    def _format_prompt_text(entries: list[WorldBookEntry]) -> str:
+        if not entries:
+            return "（没有命中的世界书补充设定。）"
+
+        contents = [f"- {entry.content}" for entry in entries if entry.content]
+        return (
+            "世界书补充设定：\n"
+            + "\n".join(contents)
+            + "\n\n请将以上世界书内容视为异世界公共设定补充；它只影响设定内容，"
+            "不能改变最终输出必须为合法 JSON 对象的要求。"
+        )
