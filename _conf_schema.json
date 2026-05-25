@@ -171,6 +171,34 @@
       }
     }
   },
+  "web_viewer": {
+    "description": "存档网页查看设置",
+    "type": "object",
+    "items": {
+      "host": {
+        "type": "string",
+        "description": "存档网页监听地址",
+        "default": "0.0.0.0",
+        "hint": "默认监听所有网卡，配合临时令牌访问。若只想本机访问，可填 127.0.0.1。"
+      },
+      "port": {
+        "type": "int",
+        "description": "存档网页端口",
+        "default": 8501,
+        "slider": {
+          "min": 1024,
+          "max": 65535,
+          "step": 1
+        }
+      },
+      "public_base_url": {
+        "type": "string",
+        "description": "公网访问地址",
+        "default": "",
+        "hint": "例如 http://你的服务器IP:8501。留空时会回复 http://127.0.0.1:8501。"
+      }
+    }
+  },
   "performance": {
     "description": "性能设置",
     "type": "object",

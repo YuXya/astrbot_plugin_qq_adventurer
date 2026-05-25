@@ -16,6 +16,8 @@ from .src.infrastructure.messaging.avatar_service import QQAvatarService
 from .src.infrastructure.messaging.history_reader import ChatHistoryReader
 from .src.infrastructure.messaging.message_sender import MessageSender
 from .src.infrastructure.reporting.generators import ReportGenerator
+from .src.infrastructure.storage import PlayerSaveRepository, PlayerTaskQueue
+from .src.infrastructure.web import SaveWebViewer
 from .src.utils.logger import logger
 
 
@@ -29,6 +31,9 @@ class QQAdventurer(Star):
     history_reader: ChatHistoryReader
     avatar_service: QQAvatarService
     message_sender: MessageSender
+    save_repository: PlayerSaveRepository
+    player_queue: PlayerTaskQueue
+    web_viewer: SaveWebViewer
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -53,6 +58,13 @@ class QQAdventurer(Star):
         )
         self.avatar_service = QQAvatarService(context, self.config_manager)
         self.message_sender = MessageSender()
+        self.save_repository = PlayerSaveRepository()
+        self.player_queue = PlayerTaskQueue()
+        self.web_viewer = SaveWebViewer(
+            self.save_repository,
+            host=self.config_manager.get_web_host(),
+            port=self.config_manager.get_web_port(),
+        )
 
     @filter.command("异世界转生", alias={"reincarnate"})
     async def reincarnate(
@@ -68,6 +80,23 @@ class QQAdventurer(Star):
             return
 
         user_id = self._get_sender_id_from_event(event)
+        if not user_id:
+            yield event.plain_result("没有拿到你的 QQ 号，暂时不能创建玩家存档。")
+            return
+
+        if await self.player_queue.is_locked(group_id, user_id):
+            yield event.plain_result("你的上一条异世界请求还在处理，已经进入队列，马上轮到你。")
+
+        async with self.player_queue.lock_for(group_id, user_id):
+            async for result in self._run_reincarnation(event, group_id, user_id):
+                yield result
+
+    async def _run_reincarnation(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        user_id: str,
+    ) -> AsyncGenerator:
         nickname = self._get_sender_name_from_event(event)
         avatar_url = self.avatar_service.build_avatar_url(user_id)
 
@@ -107,12 +136,43 @@ class QQAdventurer(Star):
         if result.error:
             logger.warning(f"异世界转生人物卡流程结束但存在错误: {result.error}")
 
+        if result.card:
+            self.save_repository.save_reincarnation(
+                group_id=group_id,
+                user_id=user_id,
+                card=result.card,
+                nickname=nickname,
+            )
+
         yield await self.message_sender.send_image_or_text(
             event,
             result.image_path,
             result.card,
             fallback_text=result.text,
         )
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("开启异世界网页")
+    async def start_adventurer_web(self, event: AstrMessageEvent) -> AsyncGenerator:
+        token = await self.web_viewer.start()
+        url = self._build_web_url(token)
+        yield event.plain_result(f"异世界存档网页已开启：{url}\n临时令牌：{token}")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("关闭异世界网页")
+    async def stop_adventurer_web(self, event: AstrMessageEvent) -> AsyncGenerator:
+        await self.web_viewer.stop()
+        yield event.plain_result("异世界存档网页已关闭，临时令牌已失效。")
+
+    async def terminate(self) -> None:
+        await self.web_viewer.stop()
+
+    def _build_web_url(self, token: str) -> str:
+        base_url = self.config_manager.get_web_public_base_url()
+        if not base_url:
+            port = self.config_manager.get_web_port()
+            base_url = f"http://127.0.0.1:{port}"
+        return f"{base_url.rstrip('/')}?token={token}"
 
     def _get_group_id_from_event(self, event: AstrMessageEvent) -> str | None:
         try:

@@ -84,3 +84,12 @@ class ConfigManager:
 
     def get_t2i_max_concurrent(self) -> int:
         return int(self._get_group("performance").get("max_concurrent_t2i", 1) or 1)
+
+    def get_web_host(self) -> str:
+        return str(self._get_group("web_viewer").get("host", "0.0.0.0") or "0.0.0.0")
+
+    def get_web_port(self) -> int:
+        return int(self._get_group("web_viewer").get("port", 8501) or 8501)
+
+    def get_web_public_base_url(self) -> str:
+        return str(self._get_group("web_viewer").get("public_base_url", "")).strip()
