@@ -9,7 +9,7 @@ from typing import Any
 
 from astrbot.api.star import StarTools
 
-from ...domain.models.data_models import ReincarnationCard
+from ...domain.models.data_models import AdventureDiaryCard, ReincarnationCard
 from ...utils.logger import logger
 
 
@@ -42,6 +42,7 @@ class PlayerSaveRepository:
             "group_id": str(group_id),
             "user_id": str(user_id),
             "updated_at": now,
+            "level": 1,
             "location": "转生大厅",
             "hp": 100,
             "mp": 100,
@@ -71,6 +72,98 @@ class PlayerSaveRepository:
             },
         )
         return user_dir
+
+    def load_player_save(
+        self,
+        group_id: str,
+        user_id: str,
+        log_limit: int = 12,
+    ) -> dict[str, Any] | None:
+        user_dir = self.get_user_dir(group_id, user_id)
+        profile_path = user_dir / "profile.json"
+        if not profile_path.exists():
+            return None
+
+        state_path = user_dir / "state.json"
+        profile = self._read_json(profile_path)
+        state = self._read_json(state_path)
+        if not state:
+            now = self._now_ms()
+            state = {
+                "schema_version": 1,
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "updated_at": now,
+                "level": 1,
+                "location": "转生大厅",
+                "hp": 100,
+                "mp": 100,
+                "gold": 0,
+                "inventory": [],
+                "quests": [],
+                "flags": {},
+            }
+            self._atomic_write_json(state_path, state)
+        elif "level" not in state:
+            state["level"] = 1
+            self._atomic_write_json(state_path, state)
+
+        return {
+            "group_id": self._safe_id(group_id),
+            "user_id": self._safe_id(user_id),
+            "profile": profile,
+            "state": state,
+            "logs": self._read_recent_logs(
+                user_dir / "adventure_log.jsonl",
+                limit=log_limit,
+            ),
+        }
+
+    def save_adventure_result(
+        self,
+        group_id: str,
+        user_id: str,
+        card: AdventureDiaryCard,
+        new_level: int,
+    ) -> None:
+        user_dir = self.get_user_dir(group_id, user_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        now = self._now_ms()
+
+        state_path = user_dir / "state.json"
+        state = self._read_json(state_path)
+        state.update(
+            {
+                "schema_version": state.get("schema_version", 1),
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "updated_at": now,
+                "level": max(1, min(int(new_level), 100)),
+                "location": card.location,
+            }
+        )
+        state.setdefault("hp", 100)
+        state.setdefault("mp", 100)
+        state.setdefault("gold", 0)
+        state.setdefault("inventory", [])
+        state.setdefault("quests", [])
+        state.setdefault("flags", {})
+        self._atomic_write_json(state_path, state)
+
+        self.append_log(
+            group_id,
+            user_id,
+            {
+                "type": "adventure_diary",
+                "created_at": now,
+                "title": card.title,
+                "action": card.action,
+                "location": card.location,
+                "level_change": card.level_change,
+                "result": card.result,
+                "rewards": card.rewards,
+            },
+        )
 
     def append_log(self, group_id: str, user_id: str, record: dict[str, Any]) -> None:
         user_dir = self.get_user_dir(group_id, user_id)
@@ -107,6 +200,7 @@ class PlayerSaveRepository:
                         "target_name": profile.get("card", {}).get("target_name", ""),
                         "race": profile.get("card", {}).get("race", ""),
                         "class_name": profile.get("card", {}).get("class_name", ""),
+                        "level": state.get("level", 1),
                         "location": state.get("location", ""),
                         "updated_at": max(
                             int(profile.get("updated_at", 0) or 0),

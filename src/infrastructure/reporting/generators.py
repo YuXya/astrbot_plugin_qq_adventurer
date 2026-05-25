@@ -8,7 +8,7 @@ from typing import Any
 
 from astrbot.api.star import StarTools
 
-from ...domain.models.data_models import ReincarnationCard
+from ...domain.models.data_models import AdventureDiaryCard, ReincarnationCard
 from ...domain.repositories.card_repository import ICardGenerator
 from ...utils.logger import logger
 from .templates import HTMLTemplates
@@ -57,7 +57,51 @@ class ReportGenerator(ICardGenerator):
 
         return None, html_content
 
-    def _persist_image(self, image_data: object, image_type: object) -> str | None:
+    async def generate_diary_image_card(
+        self,
+        card: AdventureDiaryCard,
+        html_render_func: Any,
+    ) -> tuple[str | None, str | None]:
+        html_content = self.html_templates.render_template(
+            "adventure_diary.html",
+            card=card,
+            stats_items=list(card.stats.items()),
+            rewards=card.rewards,
+            avatar_url=card.avatar_url,
+        )
+        if not html_content:
+            return None, None
+
+        async with self._render_semaphore:
+            for image_options in self.config_manager.get_t2i_rendering_strategies():
+                options = dict(image_options)
+                if options.get("type") == "png":
+                    options.pop("quality", None)
+                try:
+                    image_data = await html_render_func(
+                        html_content,
+                        {},
+                        False,
+                        options,
+                    )
+                    image_path = self._persist_image(
+                        image_data,
+                        options.get("type", "png"),
+                        prefix="adventure_diary",
+                    )
+                    if image_path:
+                        return image_path, html_content
+                except Exception as exc:
+                    logger.warning(f"冒险日记 HTML 转图片失败，尝试下一轮策略: {exc}")
+
+        return None, html_content
+
+    def _persist_image(
+        self,
+        image_data: object,
+        image_type: object,
+        prefix: str = "reincarnation",
+    ) -> str | None:
         if not image_data:
             return None
 
@@ -67,7 +111,7 @@ class ReportGenerator(ICardGenerator):
         suffix = ".jpg" if str(image_type).lower() in {"jpg", "jpeg"} else ".png"
         output_dir = StarTools.get_data_dir() / "cards"
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"reincarnation_{int(time.time() * 1000)}{suffix}"
+        output_path = output_dir / f"{prefix}_{int(time.time() * 1000)}{suffix}"
 
         try:
             if isinstance(image_data, bytes):

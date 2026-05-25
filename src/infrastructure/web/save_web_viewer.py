@@ -64,6 +64,7 @@ class SaveWebViewer:
             nickname = self._e(item.get("nickname") or item.get("target_name") or "未命名")
             race = self._e(item.get("race", ""))
             class_name = self._e(item.get("class_name", ""))
+            level = self._e(f"Lv.{item.get('level', 1)}")
             location = self._e(item.get("location", ""))
             updated_at = self._format_time(item.get("updated_at"))
             href = f"/player?group_id={group_id}&user_id={user_id}&token={self._e(self.token)}"
@@ -74,12 +75,13 @@ class SaveWebViewer:
                 f"<td><a href=\"{href}\">{nickname}</a></td>"
                 f"<td>{race}</td>"
                 f"<td>{class_name}</td>"
+                f"<td>{level}</td>"
                 f"<td>{location}</td>"
                 f"<td>{updated_at}</td>"
                 "</tr>"
             )
 
-        body = "\n".join(rows) or "<tr><td colspan=\"7\">还没有任何玩家存档。</td></tr>"
+        body = "\n".join(rows) or "<tr><td colspan=\"8\">还没有任何玩家存档。</td></tr>"
         return self._html_response(
             "异世界存档",
             f"""
@@ -89,7 +91,7 @@ class SaveWebViewer:
               <thead>
                 <tr>
                   <th>群</th><th>用户</th><th>角色</th>
-                  <th>种族</th><th>职阶</th><th>地点</th><th>更新时间</th>
+                  <th>种族</th><th>职阶</th><th>等级</th><th>地点</th><th>更新时间</th>
                 </tr>
               </thead>
               <tbody>{body}</tbody>

@@ -9,8 +9,17 @@ from astrbot.api.star import Context, Star
 from .src.application.services.adventure_application_service import (
     AdventureApplicationService,
 )
+from .src.application.services.adventure_diary_application_service import (
+    AdventureDiaryApplicationService,
+)
+from .src.domain.services.adventure_diary_domain_service import (
+    AdventureDiaryDomainService,
+)
 from .src.domain.services.adventure_domain_service import AdventureDomainService
 from .src.infrastructure.analysis.llm_adventure_analyzer import LLMAdventureAnalyzer
+from .src.infrastructure.analysis.llm_adventure_diary_analyzer import (
+    LLMAdventureDiaryAnalyzer,
+)
 from .src.infrastructure.config.config_manager import ConfigManager
 from .src.infrastructure.messaging.avatar_service import QQAvatarService
 from .src.infrastructure.messaging.history_reader import ChatHistoryReader
@@ -25,9 +34,12 @@ class QQAdventurer(Star):
     config: AstrBotConfig
     config_manager: ConfigManager
     domain_service: AdventureDomainService
+    diary_domain_service: AdventureDiaryDomainService
     llm_analyzer: LLMAdventureAnalyzer
+    diary_llm_analyzer: LLMAdventureDiaryAnalyzer
     report_generator: ReportGenerator
     adventure_service: AdventureApplicationService
+    diary_service: AdventureDiaryApplicationService
     history_reader: ChatHistoryReader
     avatar_service: QQAvatarService
     message_sender: MessageSender
@@ -40,10 +52,16 @@ class QQAdventurer(Star):
         self.config = config
         self.config_manager = ConfigManager(config)
         self.domain_service = AdventureDomainService()
+        self.diary_domain_service = AdventureDiaryDomainService()
         self.llm_analyzer = LLMAdventureAnalyzer(
             context,
             self.config_manager,
             self.domain_service,
+        )
+        self.diary_llm_analyzer = LLMAdventureDiaryAnalyzer(
+            context,
+            self.config_manager,
+            self.diary_domain_service,
         )
         self.report_generator = ReportGenerator(self.config_manager)
         self.adventure_service = AdventureApplicationService(
@@ -59,6 +77,13 @@ class QQAdventurer(Star):
         self.avatar_service = QQAvatarService(context, self.config_manager)
         self.message_sender = MessageSender()
         self.save_repository = PlayerSaveRepository()
+        self.diary_service = AdventureDiaryApplicationService(
+            self.config_manager,
+            self.diary_domain_service,
+            self.diary_llm_analyzer,
+            self.report_generator,
+            self.save_repository,
+        )
         self.player_queue = PlayerTaskQueue()
         self.web_viewer = SaveWebViewer(
             self.save_repository,
@@ -151,6 +176,71 @@ class QQAdventurer(Star):
             fallback_text=result.text,
         )
 
+    @filter.command("异世界冒险", alias={"adventure"})
+    async def adventure_diary(
+        self,
+        event: AstrMessageEvent,
+    ) -> AsyncGenerator:
+        """根据玩家存档生成一次完整的异世界冒险日记卡。用法：/异世界冒险 我要到森林里冒险"""
+        event.should_call_llm(True)
+
+        group_id = self._get_group_id_from_event(event)
+        if not group_id:
+            yield event.plain_result("请在群聊中使用 /异世界冒险。")
+            return
+
+        user_id = self._get_sender_id_from_event(event)
+        if not user_id:
+            yield event.plain_result("没有拿到你的 QQ 号，暂时不能读取玩家存档。")
+            return
+
+        if await self.player_queue.is_locked(group_id, user_id):
+            yield event.plain_result("你的上一条异世界请求还在处理，已经进入队列，马上轮到你。")
+
+        async with self.player_queue.lock_for(group_id, user_id):
+            async for result in self._run_adventure_diary(event, group_id, user_id):
+                yield result
+
+    async def _run_adventure_diary(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        user_id: str,
+    ) -> AsyncGenerator:
+        save_data = self.save_repository.load_player_save(group_id, user_id)
+        if not save_data:
+            yield event.plain_result("还没有你的异世界转生存档，请先使用 /异世界转生 建档。")
+            return
+
+        action_text = self._extract_command_tail(event, "异世界冒险")
+        nickname = self._get_sender_name_from_event(event)
+        umo = getattr(event, "unified_msg_origin", None)
+        if not umo:
+            platform_id = self._get_platform_id_from_event(event)
+            umo = f"{platform_id}:GroupMessage:{group_id}"
+
+        display_action = action_text or "自由冒险"
+        yield event.plain_result(f"正在记录本次冒险：{display_action}，准备生成冒险日记卡...")
+
+        result = await self.diary_service.execute_diary(
+            group_id=group_id,
+            user_id=user_id,
+            nickname=nickname,
+            action_text=action_text,
+            umo=umo,
+            html_render_func=self.html_render,
+        )
+
+        if result.error:
+            logger.warning(f"异世界冒险日记流程结束但存在错误: {result.error}")
+
+        yield await self.message_sender.send_image_or_text(
+            event,
+            result.image_path,
+            result.card,
+            fallback_text=result.text,
+        )
+
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("开启异世界网页")
     async def start_adventurer_web(self, event: AstrMessageEvent) -> AsyncGenerator:
@@ -211,3 +301,22 @@ class QQAdventurer(Star):
                 except Exception:
                     pass
         return None
+
+    @staticmethod
+    def _extract_command_tail(event: AstrMessageEvent, command_name: str) -> str:
+        try:
+            text = event.get_message_str()
+        except Exception:
+            text = getattr(event, "message_str", "")
+        text = str(text or "").strip()
+        prefixes = [
+            command_name,
+            f"/{command_name}",
+            f"／{command_name}",
+        ]
+        for prefix in prefixes:
+            if text == prefix:
+                return ""
+            if text.startswith(prefix + " "):
+                return text[len(prefix) :].strip()
+        return ""
