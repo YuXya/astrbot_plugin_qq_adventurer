@@ -41,6 +41,7 @@ class SaveWebViewer:
         app.router.add_get("/editable", self._editable_index)
         app.router.add_get("/editable/file", self._editable_file)
         app.router.add_post("/editable/save", self._editable_save)
+        app.router.add_post("/editable/reset", self._editable_reset)
         app.router.add_get("/health", self._health)
 
         self._runner = web.AppRunner(app)
@@ -167,6 +168,10 @@ class SaveWebViewer:
                 <button type="submit">保存</button>
               </div>
             </form>
+            <form method="post" action="/editable/reset?token={self._e(self.token)}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <button class="secondary" type="submit">恢复当前默认内容</button>
+            </form>
             """,
         )
 
@@ -190,6 +195,32 @@ class SaveWebViewer:
                 "保存失败",
                 f"""
                 <h1>保存失败</h1>
+                <p class="error">{self._e(exc)}</p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}">返回编辑</a></p>
+                """,
+                status=400,
+            )
+
+        raise web.HTTPFound(
+            f"/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}"
+        )
+
+    async def _editable_reset(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        data = await request.post()
+        file_id = str(data.get("id", ""))
+        if not self._is_editable_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable file")
+
+        try:
+            self.editable_manager.reset_to_default(file_id)
+        except Exception as exc:
+            return self._html_response(
+                "恢复默认失败",
+                f"""
+                <h1>恢复默认失败</h1>
                 <p class="error">{self._e(exc)}</p>
                 <p><a href="/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}">返回编辑</a></p>
                 """,
@@ -272,6 +303,8 @@ class SaveWebViewer:
     a:hover {{ text-decoration: underline; }}
     textarea {{ width: 100%; min-height: 68vh; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; }}
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
+    button.secondary {{ background: #59636e; }}
+    .actions {{ display: flex; gap: 10px; align-items: center; }}
     .error {{ color: #b42318; font-weight: 700; }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>

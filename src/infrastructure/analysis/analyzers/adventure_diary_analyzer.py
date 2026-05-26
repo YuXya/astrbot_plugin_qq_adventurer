@@ -4,6 +4,7 @@ import json
 
 from ....domain.models.data_models import AdventureDiaryCard, TokenUsage
 from ....domain.services.adventure_diary_domain_service import AdventureDiaryDomainService
+from ....utils.logger import logger
 from ...world_book import WorldBookEngine
 from ..utils.json_utils import parse_json_object_response
 from ..utils.llm_utils import (
@@ -11,7 +12,6 @@ from ..utils.llm_utils import (
     extract_response_text,
     extract_token_usage,
 )
-from ....utils.logger import logger
 from .base_analyzer import BaseAnalyzer
 
 
@@ -67,10 +67,10 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             user_id=user_id,
             nickname=nickname,
         )
-        system_prompt = await self._build_system_prompt(umo)
-        prompt = self._apply_persona_reinforcement(prompt, system_prompt)
+        system_prompt = self._build_diary_character_system_prompt(profile)
         if self.config_manager.get_debug_mode():
             self._save_debug_file("diary_prompt", prompt)
+            self._save_debug_file("diary_system_prompt", system_prompt)
 
         response = await call_provider_with_retry(
             self.context,
@@ -134,9 +134,30 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             },
         )
 
+    def _build_diary_character_system_prompt(self, profile: dict) -> str:
+        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        return self.editable_manager.render_prompt(
+            "adventure_diary_system_prompt",
+            {
+                "target_name": self._card_text(card, "target_name", "无名冒险者"),
+                "race": self._card_text(card, "race", "未知种族"),
+                "class_name": self._card_text(card, "class_name", "新手冒险者"),
+                "appearance": self._card_text(card, "appearance", "转生后的可爱异世界外貌"),
+                "personality": self._card_text(card, "personality", "保留转生卡中的性格"),
+                "talent": self._card_text(card, "talent", "尚未觉醒的天赋"),
+            },
+        )
+
     @staticmethod
     def _json_dump(data: object) -> str:
         return json.dumps(data if data is not None else {}, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _card_text(card: dict, key: str, fallback: str) -> str:
+        if not isinstance(card, dict):
+            return fallback
+        value = str(card.get(key) or "").strip()
+        return value or fallback
 
     @staticmethod
     def _format_logs(logs: list[dict]) -> str:

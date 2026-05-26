@@ -15,6 +15,7 @@ class EditableResourceManager:
     PROMPT_FILES = {
         "reincarnation_prompt": "prompts/reincarnation_prompt.txt",
         "adventure_diary_prompt": "prompts/adventure_diary_prompt.txt",
+        "adventure_diary_system_prompt": "prompts/adventure_diary_system_prompt.txt",
         "persona_reinforcement": "prompts/persona_reinforcement.txt",
         "default_system_prompt": "prompts/default_system_prompt.txt",
         "world_book_wrapper": "prompts/world_book_wrapper.txt",
@@ -64,6 +65,22 @@ class EditableResourceManager:
         json.loads(content)
         self.write_text("world_book/default.json", content)
 
+    def reset_to_default(self, relative_path: str) -> None:
+        defaults_map = self._default_content_map()
+        if relative_path not in defaults_map:
+            raise ValueError(f"资源没有默认内容: {relative_path}")
+
+        content = defaults_map[relative_path]
+        if relative_path == "world_book/default.json":
+            json.loads(content)
+        self.write_text(relative_path, content)
+
+    def get_default_text(self, relative_path: str) -> str:
+        defaults_map = self._default_content_map()
+        if relative_path not in defaults_map:
+            raise ValueError(f"资源没有默认内容: {relative_path}")
+        return defaults_map[relative_path]
+
     def list_editable_files(self) -> list[dict[str, str]]:
         files = [
             {
@@ -81,6 +98,10 @@ class EditableResourceManager:
             for label, relative in [
                 ("转生卡 Prompt", self.PROMPT_FILES["reincarnation_prompt"]),
                 ("冒险日记 Prompt", self.PROMPT_FILES["adventure_diary_prompt"]),
+                (
+                    "冒险日记第一人称人格 Prompt",
+                    self.PROMPT_FILES["adventure_diary_system_prompt"],
+                ),
                 ("人格格式优先级 Prompt", self.PROMPT_FILES["persona_reinforcement"]),
                 ("默认 System Prompt", self.PROMPT_FILES["default_system_prompt"]),
                 ("世界书包装话术", self.PROMPT_FILES["world_book_wrapper"]),
@@ -90,20 +111,25 @@ class EditableResourceManager:
         return files
 
     def _ensure_defaults(self) -> None:
-        defaults_map = {
+        for relative, content in self._default_content_map().items():
+            path = self._resolve(relative)
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+
+    def _default_content_map(self) -> dict[str, str]:
+        return {
             "world_book/default.json": defaults.load_builtin_world_book(),
             self.PROMPT_FILES["reincarnation_prompt"]: defaults.REINCARNATION_PROMPT,
             self.PROMPT_FILES["adventure_diary_prompt"]: defaults.ADVENTURE_DIARY_PROMPT,
+            self.PROMPT_FILES[
+                "adventure_diary_system_prompt"
+            ]: defaults.ADVENTURE_DIARY_SYSTEM_PROMPT,
             self.PROMPT_FILES["persona_reinforcement"]: defaults.PERSONA_REINFORCEMENT_PROMPT,
             self.PROMPT_FILES["default_system_prompt"]: defaults.DEFAULT_SYSTEM_PROMPT,
             self.PROMPT_FILES["world_book_wrapper"]: defaults.WORLD_BOOK_WRAPPER,
             self.PROMPT_FILES["world_book_empty"]: defaults.WORLD_BOOK_EMPTY,
         }
-        for relative, content in defaults_map.items():
-            path = self._resolve(relative)
-            if not path.exists():
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content, encoding="utf-8")
 
     def _resolve(self, relative_path: str) -> Path:
         path = (self.root_dir / relative_path).resolve()
