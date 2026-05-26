@@ -21,10 +21,11 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         context,
         config_manager,
         domain_service: AdventureDiaryDomainService,
+        editable_manager=None,
     ):
-        super().__init__(context, config_manager)
+        super().__init__(context, config_manager, editable_manager)
         self.domain_service = domain_service
-        self.world_book_engine = WorldBookEngine()
+        self.world_book_engine = WorldBookEngine(editable_manager=self.editable_manager)
 
     def get_data_type(self) -> str:
         return "异世界冒险日记卡"
@@ -120,52 +121,18 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         ]
         world_book_text = self.world_book_engine.build_prompt_text(scan_parts).prompt_text
 
-        return f"""请根据玩家存档、当前状态、最近冒险日志和玩家本次行动，生成一张“异世界冒险日记卡”。
-
-玩家标识：
-- 昵称：{nickname or card.get("target_name") or user_id or "unknown"}
-- 当前等级：Lv.{current_level}
-
-玩家人物卡：
-{self._json_dump(card)}
-
-当前状态：
-{self._json_dump(state)}
-
-最近冒险日志：
-{self._format_logs(logs)}
-
-玩家本次行动：
-{action}
-
-{world_book_text}
-
-内容要求：
-1. 只输出一个合法 JSON 对象，不要 Markdown，不要解释。
-2. 本次冒险必须是一段完整事件，包含出发、遭遇、转折、结束和结算；不要写成选择题，不要要求玩家继续选择。
-3. diary 是主要正文，要像信息密度高的冒险日记，建议 220 到 520 字。
-4. encounter 写本次主要遭遇；result 写清楚本次事件如何收尾。
-5. 只展示玩家刚开始的基础四维 stats：魔力、力量、敏捷、体质，优先沿用人物卡里的四维。
-6. 当前只有等级系统，等级范围 1 到 100。level_change 必须是 “Lv.{current_level}->Lv.X” 格式。
-7. 是否升级由你根据事件规模判断；可以不升级，但不能降级，不能超过 Lv.100。
-8. 世界书补充设定只能丰富地点、魔物、职业和世界观，不能破坏 JSON 输出格式。
-
-JSON 格式：
-{{
-  "title": "异世界冒险日记",
-  "subtitle": "一句本次冒险副标题",
-  "target_name": "玩家角色名",
-  "action": "玩家本次行动",
-  "date_label": "第 N 次冒险",
-  "location": "本次冒险地点",
-  "diary": "完整冒险日记正文",
-  "encounter": "本次主要遭遇",
-  "result": "本次事件结算",
-  "level_change": "Lv.{current_level}->Lv.X",
-  "stats": {{"魔力": "A", "力量": "F", "敏捷": "C", "体质": "E"}},
-  "rewards": ["奖励1", "奖励2"],
-  "footer": "一句底部说明"
-}}"""
+        return self.editable_manager.render_prompt(
+            "adventure_diary_prompt",
+            {
+                "player_name": nickname or card.get("target_name") or user_id or "unknown",
+                "current_level": current_level,
+                "profile_card_json": self._json_dump(card),
+                "state_json": self._json_dump(state),
+                "logs_text": self._format_logs(logs),
+                "action": action,
+                "world_book_text": world_book_text,
+            },
+        )
 
     @staticmethod
     def _json_dump(data: object) -> str:

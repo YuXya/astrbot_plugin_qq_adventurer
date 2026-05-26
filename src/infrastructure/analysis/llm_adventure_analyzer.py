@@ -7,8 +7,19 @@ from .analyzers.adventure_analyzer import AdventureAnalyzer
 
 
 class LLMAdventureAnalyzer(IAdventureAnalysisProvider):
-    def __init__(self, context, config_manager, domain_service: AdventureDomainService):
-        self.analyzer = AdventureAnalyzer(context, config_manager, domain_service)
+    def __init__(
+        self,
+        context,
+        config_manager,
+        domain_service: AdventureDomainService,
+        editable_manager=None,
+    ):
+        self.analyzer = AdventureAnalyzer(
+            context,
+            config_manager,
+            domain_service,
+            editable_manager,
+        )
 
     async def analyze_adventure(
         self,

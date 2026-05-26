@@ -21,6 +21,7 @@ from .src.infrastructure.analysis.llm_adventure_diary_analyzer import (
     LLMAdventureDiaryAnalyzer,
 )
 from .src.infrastructure.config.config_manager import ConfigManager
+from .src.infrastructure.editable_resources import EditableResourceManager
 from .src.infrastructure.messaging.avatar_service import QQAvatarService
 from .src.infrastructure.messaging.history_reader import ChatHistoryReader
 from .src.infrastructure.messaging.message_sender import MessageSender
@@ -35,6 +36,7 @@ class QQAdventurer(Star):
     config_manager: ConfigManager
     domain_service: AdventureDomainService
     diary_domain_service: AdventureDiaryDomainService
+    editable_manager: EditableResourceManager
     llm_analyzer: LLMAdventureAnalyzer
     diary_llm_analyzer: LLMAdventureDiaryAnalyzer
     report_generator: ReportGenerator
@@ -51,17 +53,20 @@ class QQAdventurer(Star):
         super().__init__(context)
         self.config = config
         self.config_manager = ConfigManager(config)
+        self.editable_manager = EditableResourceManager()
         self.domain_service = AdventureDomainService()
         self.diary_domain_service = AdventureDiaryDomainService()
         self.llm_analyzer = LLMAdventureAnalyzer(
             context,
             self.config_manager,
             self.domain_service,
+            self.editable_manager,
         )
         self.diary_llm_analyzer = LLMAdventureDiaryAnalyzer(
             context,
             self.config_manager,
             self.diary_domain_service,
+            self.editable_manager,
         )
         self.report_generator = ReportGenerator(self.config_manager)
         self.adventure_service = AdventureApplicationService(
@@ -87,6 +92,7 @@ class QQAdventurer(Star):
         self.player_queue = PlayerTaskQueue()
         self.web_viewer = SaveWebViewer(
             self.save_repository,
+            self.editable_manager,
             host=self.config_manager.get_web_host(),
             port=self.config_manager.get_web_port(),
         )

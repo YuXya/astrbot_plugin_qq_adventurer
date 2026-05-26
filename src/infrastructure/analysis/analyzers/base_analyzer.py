@@ -6,6 +6,7 @@ from typing import Generic, TypeVar
 from astrbot.api.star import StarTools
 
 from ....domain.models.data_models import TokenUsage
+from ...editable_resources import EditableResourceManager
 from ....utils.logger import logger
 from ..utils.json_utils import parse_json_object_response
 from ..utils.llm_utils import (
@@ -18,9 +19,15 @@ TDataObject = TypeVar("TDataObject")
 
 
 class BaseAnalyzer(ABC, Generic[TDataObject]):
-    def __init__(self, context, config_manager):
+    def __init__(
+        self,
+        context,
+        config_manager,
+        editable_manager: EditableResourceManager | None = None,
+    ):
         self.context = context
         self.config_manager = config_manager
+        self.editable_manager = editable_manager or EditableResourceManager()
 
     @abstractmethod
     def get_data_type(self) -> str:
@@ -102,17 +109,13 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
             return prompt
 
         persona_content = system_prompt.strip()
-        return (
-            "[SYSTEM_IDENTITY]\n"
-            f"{persona_content}\n\n"
-            "[TASK]\n"
-            f"请以上方人格、语气和观察方式完成下面的{self.get_data_type()}生成任务。\n"
-            "人格只能影响 JSON 字段值中的文风、措辞和叙事视角，绝不能改变输出结构。\n\n"
-            "[FORMAT_PRIORITY]\n"
-            "输出格式优先级高于人格扮演。最终回复必须是一个可被 json.loads 直接解析的纯 JSON 对象。\n"
-            "禁止输出 Markdown 代码块、解释、寒暄、角色台词前缀或 JSON 外的任何文字。\n\n"
-            "[ORIGINAL_TASK]\n"
-            f"{prompt}"
+        return self.editable_manager.render_prompt(
+            "persona_reinforcement",
+            {
+                "system_prompt": persona_content,
+                "data_type": self.get_data_type(),
+                "prompt": prompt,
+            },
         )
 
     def _save_debug_file(self, suffix: str, content: str):
@@ -125,7 +128,7 @@ class BaseAnalyzer(ABC, Generic[TDataObject]):
             logger.warning(f"保存调试文件失败: {exc}")
 
     async def _build_system_prompt(self, umo: str | None) -> str:
-        default_prompt = "你是一个擅长生成异世界角色卡和冒险日记的轻小说设定师。"
+        default_prompt = self.editable_manager.get_prompt("default_system_prompt")
         persona_mgr = getattr(self.context, "persona_manager", None)
         if persona_mgr is None:
             return default_prompt

@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import secrets
 from typing import Any
+from urllib.parse import quote
 
 from aiohttp import web
 
@@ -10,8 +11,15 @@ from ...utils.logger import logger
 
 
 class SaveWebViewer:
-    def __init__(self, repository, host: str = "0.0.0.0", port: int = 8501):
+    def __init__(
+        self,
+        repository,
+        editable_manager,
+        host: str = "0.0.0.0",
+        port: int = 8501,
+    ):
         self.repository = repository
+        self.editable_manager = editable_manager
         self.host = host
         self.port = int(port)
         self.token = ""
@@ -30,6 +38,9 @@ class SaveWebViewer:
         app = web.Application()
         app.router.add_get("/", self._index)
         app.router.add_get("/player", self._player_detail)
+        app.router.add_get("/editable", self._editable_index)
+        app.router.add_get("/editable/file", self._editable_file)
+        app.router.add_post("/editable/save", self._editable_save)
         app.router.add_get("/health", self._health)
 
         self._runner = web.AppRunner(app)
@@ -87,6 +98,7 @@ class SaveWebViewer:
             f"""
             <h1>异世界存档</h1>
             <p class="muted">只读查看页。关闭网页命令会立即使当前令牌失效。</p>
+            <p><a href="/editable?token={self._e(self.token)}">编辑世界书和 Prompt 话术</a></p>
             <table>
               <thead>
                 <tr>
@@ -97,6 +109,95 @@ class SaveWebViewer:
               <tbody>{body}</tbody>
             </table>
             """,
+        )
+
+    async def _editable_index(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        rows = []
+        for item in self.editable_manager.list_editable_files():
+            raw_file_id = item["id"]
+            file_id = self._e(raw_file_id)
+            label = self._e(item["label"])
+            file_type = self._e(item["type"])
+            href = (
+                f"/editable/file?id={quote(raw_file_id, safe='')}"
+                f"&token={self._e(self.token)}"
+            )
+            rows.append(
+                "<tr>"
+                f"<td><a href=\"{href}\">{label}</a></td>"
+                f"<td>{file_id}</td>"
+                f"<td>{file_type}</td>"
+                "</tr>"
+            )
+
+        return self._html_response(
+            "可编辑资源",
+            f"""
+            <h1>可编辑资源</h1>
+            <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
+            <p class="muted">保存时会自动备份旧文件。世界书 default.json 会先做 JSON 校验。</p>
+            <table>
+              <thead><tr><th>名称</th><th>文件</th><th>类型</th></tr></thead>
+              <tbody>{"".join(rows)}</tbody>
+            </table>
+            """,
+        )
+
+    async def _editable_file(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        file_id = request.query.get("id", "")
+        if not self._is_editable_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable file")
+        content = self.editable_manager.read_text(file_id)
+        title = f"编辑 {file_id}"
+        return self._html_response(
+            title,
+            f"""
+            <h1>{self._e(title)}</h1>
+            <p><a href="/editable?token={self._e(self.token)}">返回可编辑资源</a></p>
+            <form method="post" action="/editable/save?token={self._e(self.token)}">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <textarea name="content" spellcheck="false">{self._e(content)}</textarea>
+              <div class="actions">
+                <button type="submit">保存</button>
+              </div>
+            </form>
+            """,
+        )
+
+    async def _editable_save(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        data = await request.post()
+        file_id = str(data.get("id", ""))
+        content = str(data.get("content", ""))
+        if not self._is_editable_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable file")
+
+        try:
+            if file_id == "world_book/default.json":
+                self.editable_manager.write_world_book(content)
+            else:
+                self.editable_manager.write_text(file_id, content)
+        except Exception as exc:
+            return self._html_response(
+                "保存失败",
+                f"""
+                <h1>保存失败</h1>
+                <p class="error">{self._e(exc)}</p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}">返回编辑</a></p>
+                """,
+                status=400,
+            )
+
+        raise web.HTTPFound(
+            f"/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}"
         )
 
     async def _player_detail(self, request: web.Request) -> web.Response:
@@ -143,8 +244,14 @@ class SaveWebViewer:
             content_type="text/plain",
         )
 
-    def _html_response(self, title: str, content: str) -> web.Response:
+    def _html_response(
+        self,
+        title: str,
+        content: str,
+        status: int = 200,
+    ) -> web.Response:
         return web.Response(
+            status=status,
             text=f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -163,6 +270,9 @@ class SaveWebViewer:
     th {{ background: #eef2f6; color: #3a4350; }}
     a {{ color: #1f6feb; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
+    textarea {{ width: 100%; min-height: 68vh; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; }}
+    button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
+    .error {{ color: #b42318; font-weight: 700; }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>
 </head>
@@ -191,3 +301,8 @@ class SaveWebViewer:
             return dt.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             return ""
+
+    def _is_editable_file(self, file_id: str) -> bool:
+        return file_id in {
+            item["id"] for item in self.editable_manager.list_editable_files()
+        }

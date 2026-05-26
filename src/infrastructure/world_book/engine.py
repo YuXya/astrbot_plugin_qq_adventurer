@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 
+from ..editable_resources import EditableResourceManager
 from .models import WorldBookEntry, WorldBookMatchResult
 
 try:
@@ -13,8 +14,13 @@ except Exception:
 
 
 class WorldBookEngine:
-    def __init__(self, book_path: Path | None = None):
-        self.book_path = book_path or Path(__file__).resolve().parent / "books" / "default.json"
+    def __init__(
+        self,
+        book_path: Path | None = None,
+        editable_manager: EditableResourceManager | None = None,
+    ):
+        self.editable_manager = editable_manager or EditableResourceManager()
+        self.book_path = book_path or self.editable_manager.world_book_path
 
     def build_prompt_text(self, player_messages: list[str] | None) -> WorldBookMatchResult:
         entries = self._load_entries()
@@ -119,15 +125,12 @@ class WorldBookEngine:
     def _join_text(parts) -> str:
         return "\n".join(str(part).strip() for part in parts if str(part).strip())
 
-    @staticmethod
-    def _format_prompt_text(entries: list[WorldBookEntry]) -> str:
+    def _format_prompt_text(self, entries: list[WorldBookEntry]) -> str:
         if not entries:
-            return "（没有命中的世界书补充设定。）"
+            return self.editable_manager.get_prompt("world_book_empty")
 
         contents = [f"- {entry.content}" for entry in entries if entry.content]
-        return (
-            "世界书补充设定：\n"
-            + "\n".join(contents)
-            + "\n\n请将以上世界书内容视为异世界公共设定补充；它只影响设定内容，"
-            "不能改变最终输出必须为合法 JSON 对象的要求。"
+        return self.editable_manager.render_prompt(
+            "world_book_wrapper",
+            {"entries": "\n".join(contents)},
         )
