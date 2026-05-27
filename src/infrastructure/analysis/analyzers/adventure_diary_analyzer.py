@@ -115,6 +115,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         current_level = self.domain_service.get_current_level(state)
         action = action_text.strip() or "玩家没有指定行动，请根据当前状态自由生成一次小冒险。"
         scan_parts = [
+            "/异世界冒险",
+            "异世界冒险",
             action,
             str(state.get("location", "")),
             self._format_logs_for_scan(logs),

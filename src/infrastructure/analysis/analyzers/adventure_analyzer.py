@@ -36,8 +36,13 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
         )
         messages_text = self._format_player_messages(player_messages)
         avatar_text = self._format_avatar_caption(avatar_caption)
+        world_book_scan_parts = [
+            theme,
+            str(theme or "").lstrip("/／"),
+            *(player_messages or []),
+        ]
         world_book_text = self.world_book_engine.build_prompt_text(
-            player_messages
+            world_book_scan_parts
         ).prompt_text
 
         return self.editable_manager.render_prompt(
