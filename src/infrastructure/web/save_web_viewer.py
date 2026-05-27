@@ -331,12 +331,13 @@ class SaveWebViewer:
                 entriesEl.innerHTML = "";
                 state.entries.forEach((entry, index) => {{
                   const normalized = normalizeEntry(entry, index);
+                  const summaryTitle = normalized.title || normalized.id || `条目 ${{index + 1}}`;
                   const card = document.createElement("section");
                   card.className = "world-entry";
                   card.innerHTML = `
                     <details open>
                       <summary class="world-entry-head">
-                        <span class="entry-title">条目 ${{index + 1}}</span>
+                        <span class="entry-title">${{escapeHtml(summaryTitle)}}</span>
                         <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
                         <button class="danger" type="button" data-action="delete">删除</button>
                       </summary>
@@ -374,6 +375,14 @@ class SaveWebViewer:
                     state.entries.splice(index, 1);
                     renderEntries();
                   }});
+                  const titleInput = card.querySelector("[data-field='title']");
+                  const idInput = card.querySelector("[data-field='id']");
+                  const titleEl = card.querySelector(".entry-title");
+                  const refreshSummaryTitle = () => {{
+                    titleEl.textContent = titleInput.value.trim() || idInput.value.trim() || `条目 ${{index + 1}}`;
+                  }};
+                  titleInput.addEventListener("input", refreshSummaryTitle);
+                  idInput.addEventListener("input", refreshSummaryTitle);
                   entriesEl.appendChild(card);
                 }});
               }}
