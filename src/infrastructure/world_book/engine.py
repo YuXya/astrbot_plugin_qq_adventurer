@@ -36,7 +36,9 @@ class WorldBookEngine:
             activated_ids=activated_ids,
             include_always=True,
         )
-        recursion_text = self._join_text(entry.content for entry in first_round)
+        recursion_text = self._join_text(
+            entry.content for entry in first_round if entry.recursive
+        )
         second_round = self._match_entries(
             entries,
             recursion_text,

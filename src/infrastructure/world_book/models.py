@@ -11,6 +11,7 @@ class WorldBookEntry:
     strategy: str = "keyword"
     keys: list[str] = field(default_factory=list)
     order: int = 100
+    recursive: bool = True
     content: str = ""
 
     @classmethod
@@ -33,6 +34,7 @@ class WorldBookEntry:
             strategy=str(raw.get("strategy") or "keyword").strip().lower(),
             keys=[str(key).strip() for key in keys if str(key).strip()],
             order=order,
+            recursive=raw.get("recursive", True) is not False,
             content=str(raw.get("content") or "").strip(),
         )
 

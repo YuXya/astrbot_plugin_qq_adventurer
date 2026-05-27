@@ -275,6 +275,8 @@ class SaveWebViewer:
               const form = document.getElementById("world-book-form");
               const contentInput = document.getElementById("world-book-content");
               let draggingIndex = null;
+              let openEntryKeys = new Set();
+              let hasCapturedOpenState = false;
 
               const state = {{
                 ...initialWorldBook,
@@ -286,6 +288,7 @@ class SaveWebViewer:
                   id: `entry_${{index + 1}}`,
                   title: "",
                   enabled: true,
+                  recursive: true,
                   strategy: "keyword",
                   keys: [],
                   order: 100,
@@ -302,6 +305,7 @@ class SaveWebViewer:
                   id: String(entry.id || `entry_${{index + 1}}`).trim(),
                   title: String(entry.title || ""),
                   enabled: entry.enabled !== false,
+                  recursive: entry.recursive !== false,
                   strategy: entry.strategy === "always" ? "always" : "keyword",
                   keys: keys.map((key) => String(key).trim()).filter(Boolean),
                   order: Number.isFinite(order) ? order : 100,
@@ -321,6 +325,7 @@ class SaveWebViewer:
                   id: card.querySelector("[data-field='id']").value,
                   title: card.querySelector("[data-field='title']").value,
                   enabled: card.querySelector("[data-field='enabled']").checked,
+                  recursive: card.querySelector("[data-field='recursive']").checked,
                   strategy: card.querySelector("[data-field='strategy']").value,
                   keys: splitKeys(card.querySelector("[data-field='keys']").value),
                   order: card.querySelector("[data-field='order']").value,
@@ -328,19 +333,38 @@ class SaveWebViewer:
                 }}, index));
               }}
 
+              function entryDomKey(entry, index) {{
+                return String(entry.id || entry.title || `entry_${{index + 1}}`).trim();
+              }}
+
+              function captureOpenState() {{
+                hasCapturedOpenState = true;
+                openEntryKeys = new Set(
+                  Array.from(entriesEl.querySelectorAll(".world-entry")).flatMap((card) => {{
+                    const key = card.dataset.entryKey;
+                    const details = card.querySelector("details");
+                    return key && details && details.open ? [key] : [];
+                  }})
+                );
+              }}
+
               function renderEntries() {{
                 entriesEl.innerHTML = "";
                 state.entries.forEach((entry, index) => {{
                   const normalized = normalizeEntry(entry, index);
                   const summaryTitle = normalized.title || normalized.id || `条目 ${{index + 1}}`;
+                  const entryKey = entryDomKey(normalized, index);
+                  const isOpen = !hasCapturedOpenState || openEntryKeys.has(entryKey);
                   const card = document.createElement("section");
                   card.className = "world-entry";
+                  card.dataset.entryKey = entryKey;
                   card.innerHTML = `
-                    <details open>
+                    <details${{isOpen ? " open" : ""}}>
                       <summary class="world-entry-head">
                         <button class="drag-handle" type="button" data-action="drag" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
                         <span class="entry-title">${{escapeHtml(summaryTitle)}}</span>
                         <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
+                        <label class="summary-check"><input data-field="recursive" type="checkbox"${{normalized.recursive ? " checked" : ""}}> 允许递归</label>
                         <button class="danger" type="button" data-action="delete">删除</button>
                       </summary>
                       <div class="world-entry-body">
@@ -410,8 +434,10 @@ class SaveWebViewer:
                     if (!confirm("确定删除这个世界书条目？")) {{
                       return;
                     }}
+                    captureOpenState();
                     syncFromDom();
                     state.entries.splice(index, 1);
+                    openEntryKeys.delete(entryKey);
                     renderEntries();
                   }});
                   const titleInput = card.querySelector("[data-field='title']");
@@ -427,6 +453,7 @@ class SaveWebViewer:
               }}
 
               function reorderEntries(fromIndex, toIndex) {{
+                captureOpenState();
                 syncFromDom();
                 const nextEntries = [...state.entries];
                 const [moved] = nextEntries.splice(fromIndex, 1);
@@ -452,8 +479,11 @@ class SaveWebViewer:
               }}
 
               addEntryButton.addEventListener("click", () => {{
+                captureOpenState();
                 syncFromDom();
-                state.entries.push(entryDefaults(state.entries.length));
+                const newEntry = entryDefaults(state.entries.length);
+                state.entries.push(newEntry);
+                openEntryKeys.add(entryDomKey(newEntry, state.entries.length - 1));
                 renderEntries();
               }});
 
@@ -531,6 +561,7 @@ class SaveWebViewer:
                     "id": str(entry.get("id") or fallback_id).strip(),
                     "title": str(entry.get("title") or ""),
                     "enabled": entry.get("enabled", True) is not False,
+                    "recursive": entry.get("recursive", True) is not False,
                     "strategy": (
                         "always"
                         if str(entry.get("strategy") or "keyword").strip().lower()
