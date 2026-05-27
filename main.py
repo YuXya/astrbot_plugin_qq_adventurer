@@ -118,8 +118,15 @@ class QQAdventurer(Star):
         if await self.player_queue.is_locked(group_id, user_id):
             yield event.plain_result("你的上一条异世界请求还在处理，已经进入队列，马上轮到你。")
 
+        preference_text = self._extract_command_tail(event, "异世界转生")
+
         async with self.player_queue.lock_for(group_id, user_id):
-            async for result in self._run_reincarnation(event, group_id, user_id):
+            async for result in self._run_reincarnation(
+                event,
+                group_id,
+                user_id,
+                preference_text,
+            ):
                 yield result
 
     async def _run_reincarnation(
@@ -127,6 +134,7 @@ class QQAdventurer(Star):
         event: AstrMessageEvent,
         group_id: str,
         user_id: str,
+        preference_text: str = "",
     ) -> AsyncGenerator:
         nickname = self._get_sender_name_from_event(event)
         avatar_url = self.avatar_service.build_avatar_url(user_id)
@@ -153,8 +161,12 @@ class QQAdventurer(Star):
             platform_id = self._get_platform_id_from_event(event)
             umo = f"{platform_id}:GroupMessage:{group_id}"
 
+        theme = "/异世界转生"
+        if preference_text:
+            theme = f"{theme} {preference_text}"
+
         result = await self.adventure_service.execute_adventure(
-            theme="/异世界转生",
+            theme=theme,
             html_render_func=self.html_render,
             user_id=user_id,
             nickname=nickname,
