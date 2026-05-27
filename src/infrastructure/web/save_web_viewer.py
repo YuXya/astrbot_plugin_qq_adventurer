@@ -160,12 +160,44 @@ class SaveWebViewer:
         meta = self._editable_file_meta(file_id)
         label = meta.get("label", file_id) if meta else file_id
         title = f"编辑 {label}"
+        if file_id == "world_book/default.json":
+            return self._world_book_file_response(
+                title,
+                file_id,
+                back_category,
+                note,
+                content,
+            )
+
+        return self._plain_editable_file_response(
+            title,
+            file_id,
+            back_category,
+            note,
+            content,
+        )
+
+    def _plain_editable_file_response(
+        self,
+        title: str,
+        file_id: str,
+        back_category: str,
+        note: str,
+        content: str,
+        warning: str = "",
+    ) -> web.Response:
+        warning_html = (
+            f"<p class=\"error\">{self._e(warning)}</p>"
+            if warning
+            else ""
+        )
         return self._html_response(
             title,
             f"""
             <h1>{self._e(title)}</h1>
             <p><a href="/editable?category={self._e(back_category)}&token={self._e(self.token)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
+            {warning_html}
             <form method="post" action="/editable/save?token={self._e(self.token)}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
@@ -182,6 +214,197 @@ class SaveWebViewer:
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
             </form>
+            """,
+        )
+
+    def _world_book_file_response(
+        self,
+        title: str,
+        file_id: str,
+        back_category: str,
+        note: str,
+        content: str,
+    ) -> web.Response:
+        try:
+            book = self._normalize_world_book(json.loads(content))
+        except Exception as exc:
+            return self._plain_editable_file_response(
+                title,
+                file_id,
+                back_category,
+                note,
+                content,
+                warning=f"世界书 JSON 解析失败，请先修复原始 JSON：{exc}",
+            )
+
+        book_json = self._json_script_data(book)
+        return self._html_response(
+            title,
+            f"""
+            <h1>{self._e(title)}</h1>
+            <p><a href="/editable?category={self._e(back_category)}&token={self._e(self.token)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p class="muted">{self._e(file_id)}</p>
+            <form id="world-book-form" method="post" action="/editable/save?token={self._e(self.token)}">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
+              <input id="world-book-content" type="hidden" name="content" value="">
+              <label for="note">资源说明 / 注释</label>
+              <textarea id="note" class="note-editor" name="note" spellcheck="false">{self._e(note)}</textarea>
+
+              <div class="world-book-toolbar">
+                <div>
+                  <h2>世界书条目</h2>
+                  <p class="muted">每个条目会在命中后作为世界背景补充注入 Prompt。</p>
+                </div>
+                <button id="add-entry" type="button">+ 添加条目</button>
+              </div>
+              <div id="world-book-entries"></div>
+              <div class="actions">
+                <button type="submit">保存</button>
+              </div>
+            </form>
+            <form method="post" action="/editable/reset?token={self._e(self.token)}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
+              <button class="secondary" type="submit">恢复当前默认内容</button>
+            </form>
+            <script>
+              const initialWorldBook = {book_json};
+              const entriesEl = document.getElementById("world-book-entries");
+              const addEntryButton = document.getElementById("add-entry");
+              const form = document.getElementById("world-book-form");
+              const contentInput = document.getElementById("world-book-content");
+
+              const state = {{
+                ...initialWorldBook,
+                entries: Array.isArray(initialWorldBook.entries) ? initialWorldBook.entries : [],
+              }};
+
+              function entryDefaults(index) {{
+                return {{
+                  id: `entry_${{index + 1}}`,
+                  title: "",
+                  enabled: true,
+                  strategy: "keyword",
+                  keys: [],
+                  order: 100,
+                  content: "",
+                }};
+              }}
+
+              function normalizeEntry(entry, index) {{
+                const keys = Array.isArray(entry.keys)
+                  ? entry.keys
+                  : (typeof entry.keys === "string" ? [entry.keys] : []);
+                const order = Number.parseInt(entry.order, 10);
+                return {{
+                  id: String(entry.id || `entry_${{index + 1}}`).trim(),
+                  title: String(entry.title || ""),
+                  enabled: entry.enabled !== false,
+                  strategy: entry.strategy === "always" ? "always" : "keyword",
+                  keys: keys.map((key) => String(key).trim()).filter(Boolean),
+                  order: Number.isFinite(order) ? order : 100,
+                  content: String(entry.content || ""),
+                }};
+              }}
+
+              function splitKeys(value) {{
+                return String(value || "")
+                  .split(/[\\n,，]/)
+                  .map((key) => key.trim())
+                  .filter(Boolean);
+              }}
+
+              function syncFromDom() {{
+                state.entries = Array.from(entriesEl.querySelectorAll(".world-entry")).map((card, index) => normalizeEntry({{
+                  id: card.querySelector("[data-field='id']").value,
+                  title: card.querySelector("[data-field='title']").value,
+                  enabled: card.querySelector("[data-field='enabled']").checked,
+                  strategy: card.querySelector("[data-field='strategy']").value,
+                  keys: splitKeys(card.querySelector("[data-field='keys']").value),
+                  order: card.querySelector("[data-field='order']").value,
+                  content: card.querySelector("[data-field='content']").value,
+                }}, index));
+              }}
+
+              function renderEntries() {{
+                entriesEl.innerHTML = "";
+                state.entries.forEach((entry, index) => {{
+                  const normalized = normalizeEntry(entry, index);
+                  const card = document.createElement("section");
+                  card.className = "world-entry";
+                  card.innerHTML = `
+                    <details open>
+                      <summary class="world-entry-head">
+                        <span class="entry-title">条目 ${{index + 1}}</span>
+                        <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
+                        <button class="danger" type="button" data-action="delete">删除</button>
+                      </summary>
+                      <div class="world-entry-body">
+                        <div class="world-entry-grid">
+                          <label class="compact-field"><span>ID</span><input data-field="id" type="text" value="${{escapeAttr(normalized.id)}}"></label>
+                          <label class="compact-field"><span>标题</span><input data-field="title" type="text" value="${{escapeAttr(normalized.title)}}"></label>
+                          <label class="compact-field"><span>顺序</span><input data-field="order" type="number" step="1" value="${{normalized.order}}"></label>
+                          <label class="compact-field"><span>触发方式</span>
+                            <select data-field="strategy">
+                              <option value="keyword"${{normalized.strategy === "keyword" ? " selected" : ""}}>关键词命中</option>
+                              <option value="always"${{normalized.strategy === "always" ? " selected" : ""}}>总是注入</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label class="block-field">关键词（支持中文逗号、英文逗号或换行分隔；触发方式为“总是注入”时可留空）
+                          <textarea data-field="keys" class="keys-editor" spellcheck="false">${{escapeHtml(normalized.keys.join("\\n"))}}</textarea>
+                        </label>
+                        <label class="block-field">设定内容
+                          <textarea data-field="content" class="entry-content-editor" spellcheck="false">${{escapeHtml(normalized.content)}}</textarea>
+                        </label>
+                      </div>
+                    </details>
+                  `;
+                  card.querySelector(".summary-check").addEventListener("click", (event) => {{
+                    event.stopPropagation();
+                  }});
+                  card.querySelector("[data-action='delete']").addEventListener("click", (event) => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!confirm("确定删除这个世界书条目？")) {{
+                      return;
+                    }}
+                    syncFromDom();
+                    state.entries.splice(index, 1);
+                    renderEntries();
+                  }});
+                  entriesEl.appendChild(card);
+                }});
+              }}
+
+              function escapeHtml(value) {{
+                return String(value)
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+              }}
+
+              function escapeAttr(value) {{
+                return escapeHtml(value)
+                  .replace(/"/g, "&quot;")
+                  .replace(/'/g, "&#39;");
+              }}
+
+              addEntryButton.addEventListener("click", () => {{
+                syncFromDom();
+                state.entries.push(entryDefaults(state.entries.length));
+                renderEntries();
+              }});
+
+              form.addEventListener("submit", () => {{
+                syncFromDom();
+                contentInput.value = JSON.stringify(state, null, 2);
+              }});
+
+              state.entries = state.entries.map(normalizeEntry);
+              renderEntries();
+            </script>
             """,
         )
 
@@ -217,6 +440,60 @@ class SaveWebViewer:
 
         raise web.HTTPFound(
             f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}"
+        )
+
+    @staticmethod
+    def _normalize_world_book(raw: object) -> dict:
+        book = dict(raw) if isinstance(raw, dict) else {}
+        entries = book.get("entries", [])
+        if isinstance(entries, dict):
+            iterable = entries.items()
+        elif isinstance(entries, list):
+            iterable = enumerate(entries)
+        else:
+            iterable = []
+
+        normalized_entries = []
+        for fallback_id, entry in iterable:
+            if not isinstance(entry, dict):
+                continue
+            keys = entry.get("keys", [])
+            if isinstance(keys, str):
+                keys = [keys]
+            if not isinstance(keys, list):
+                keys = []
+            try:
+                order = int(entry.get("order", 100))
+            except (TypeError, ValueError):
+                order = 100
+            normalized_entries.append(
+                {
+                    "id": str(entry.get("id") or fallback_id).strip(),
+                    "title": str(entry.get("title") or ""),
+                    "enabled": entry.get("enabled", True) is not False,
+                    "strategy": (
+                        "always"
+                        if str(entry.get("strategy") or "keyword").strip().lower()
+                        == "always"
+                        else "keyword"
+                    ),
+                    "keys": [str(key).strip() for key in keys if str(key).strip()],
+                    "order": order,
+                    "content": str(entry.get("content") or ""),
+                }
+            )
+
+        book["version"] = book.get("version", 1)
+        book["entries"] = normalized_entries
+        return book
+
+    @staticmethod
+    def _json_script_data(value: object) -> str:
+        return (
+            json.dumps(value, ensure_ascii=False)
+            .replace("</", "<\\/")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
         )
 
     async def _editable_reset(self, request: web.Request) -> web.Response:
@@ -326,8 +603,28 @@ class SaveWebViewer:
     textarea.content-editor {{ min-height: 58vh; }}
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
     button.secondary {{ background: #59636e; }}
+    button.danger {{ margin-top: 0; background: #b42318; }}
     .actions {{ display: flex; gap: 10px; align-items: center; }}
     .error {{ color: #b42318; font-weight: 700; }}
+    .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0 12px; }}
+    .world-book-toolbar h2 {{ margin-top: 0; }}
+    .world-entry {{ margin: 12px 0; background: #fff; border: 1px solid #dde2ea; border-radius: 6px; }}
+    .world-entry details {{ padding: 0; }}
+    .world-entry-head {{ display: flex; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; background: #eef2f6; border-radius: 6px; }}
+    .world-entry details[open] .world-entry-head {{ border-bottom: 1px solid #dde2ea; border-radius: 6px 6px 0 0; }}
+    .world-entry-head .entry-title {{ font-weight: 800; margin-right: auto; }}
+    .summary-check {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 700; cursor: default; }}
+    .summary-check input {{ width: 18px; height: 18px; }}
+    .world-entry-body {{ padding: 14px; }}
+    .world-entry-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }}
+    .compact-field {{ display: flex; align-items: center; gap: 8px; margin: 0; }}
+    .compact-field span {{ flex: 0 0 auto; color: #3a4350; }}
+    .world-entry input[type="text"], .world-entry input[type="number"], .world-entry select {{ width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 9px; border: 1px solid #c8d0dc; border-radius: 6px; font: inherit; background: #fff; }}
+    .block-field {{ margin-top: 12px; }}
+    textarea.keys-editor {{ min-height: 72px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
+    textarea.entry-content-editor {{ min-height: 112px; }}
+    @media (max-width: 900px) {{ .world-entry-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+    @media (max-width: 720px) {{ .world-entry-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>
 </head>
