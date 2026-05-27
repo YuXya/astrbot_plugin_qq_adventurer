@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import secrets
 from typing import Any
 from urllib.parse import quote
@@ -122,6 +123,7 @@ class SaveWebViewer:
             file_id = self._e(raw_file_id)
             label = self._e(item["label"])
             file_type = self._e(item["type"])
+            note_preview = self._e(item.get("note_preview", ""))
             href = (
                 f"/editable/file?id={quote(raw_file_id, safe='')}"
                 f"&token={self._e(self.token)}"
@@ -131,6 +133,7 @@ class SaveWebViewer:
                 f"<td><a href=\"{href}\">{label}</a></td>"
                 f"<td>{file_id}</td>"
                 f"<td>{file_type}</td>"
+                f"<td>{note_preview}</td>"
                 "</tr>"
             )
 
@@ -141,7 +144,7 @@ class SaveWebViewer:
             <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
             <p class="muted">保存时会自动备份旧文件。世界书 default.json 会先做 JSON 校验。</p>
             <table>
-              <thead><tr><th>名称</th><th>文件</th><th>类型</th></tr></thead>
+              <thead><tr><th>名称</th><th>文件</th><th>类型</th><th>说明</th></tr></thead>
               <tbody>{"".join(rows)}</tbody>
             </table>
             """,
@@ -155,15 +158,22 @@ class SaveWebViewer:
         if not self._is_editable_file(file_id):
             raise web.HTTPBadRequest(text="invalid editable file")
         content = self.editable_manager.read_text(file_id)
-        title = f"编辑 {file_id}"
+        note = self.editable_manager.read_note(file_id)
+        meta = self._editable_file_meta(file_id)
+        label = meta.get("label", file_id) if meta else file_id
+        title = f"编辑 {label}"
         return self._html_response(
             title,
             f"""
             <h1>{self._e(title)}</h1>
             <p><a href="/editable?token={self._e(self.token)}">返回可编辑资源</a></p>
+            <p class="muted">{self._e(file_id)}</p>
             <form method="post" action="/editable/save?token={self._e(self.token)}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
-              <textarea name="content" spellcheck="false">{self._e(content)}</textarea>
+              <label for="note">资源说明 / 注释</label>
+              <textarea id="note" class="note-editor" name="note" spellcheck="false">{self._e(note)}</textarea>
+              <label for="content">资源正文</label>
+              <textarea id="content" class="content-editor" name="content" spellcheck="false">{self._e(content)}</textarea>
               <div class="actions">
                 <button type="submit">保存</button>
               </div>
@@ -181,15 +191,18 @@ class SaveWebViewer:
 
         data = await request.post()
         file_id = str(data.get("id", ""))
+        note = str(data.get("note", ""))
         content = str(data.get("content", ""))
         if not self._is_editable_file(file_id):
             raise web.HTTPBadRequest(text="invalid editable file")
 
         try:
             if file_id == "world_book/default.json":
+                json.loads(content)
                 self.editable_manager.write_world_book(content)
             else:
                 self.editable_manager.write_text(file_id, content)
+            self.editable_manager.write_note(file_id, note)
         except Exception as exc:
             return self._html_response(
                 "保存失败",
@@ -216,6 +229,7 @@ class SaveWebViewer:
 
         try:
             self.editable_manager.reset_to_default(file_id)
+            self.editable_manager.reset_note_to_default(file_id)
         except Exception as exc:
             return self._html_response(
                 "恢复默认失败",
@@ -301,7 +315,10 @@ class SaveWebViewer:
     th {{ background: #eef2f6; color: #3a4350; }}
     a {{ color: #1f6feb; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    textarea {{ width: 100%; min-height: 68vh; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; }}
+    label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
+    textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; }}
+    textarea.note-editor {{ min-height: 132px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    textarea.content-editor {{ min-height: 58vh; }}
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
     button.secondary {{ background: #59636e; }}
     .actions {{ display: flex; gap: 10px; align-items: center; }}
@@ -339,3 +356,9 @@ class SaveWebViewer:
         return file_id in {
             item["id"] for item in self.editable_manager.list_editable_files()
         }
+
+    def _editable_file_meta(self, file_id: str) -> dict[str, str] | None:
+        for item in self.editable_manager.list_editable_files():
+            if item["id"] == file_id:
+                return item
+        return None
