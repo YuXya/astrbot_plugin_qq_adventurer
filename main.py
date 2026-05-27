@@ -139,14 +139,19 @@ class QQAdventurer(Star):
         nickname = self._get_sender_name_from_event(event)
         avatar_url = self.avatar_service.build_avatar_url(user_id)
 
-        player_messages = await self.history_reader.read_player_messages(
-            event,
-            group_id=group_id,
-            user_id=user_id,
-        )
+        if preference_text:
+            player_messages = []
+        else:
+            player_messages = await self.history_reader.read_player_messages(
+                event,
+                group_id=group_id,
+                user_id=user_id,
+            )
         avatar_caption = await self.avatar_service.describe_avatar(avatar_url)
 
-        if player_messages:
+        if preference_text:
+            progress = "已读取本次转生偏好，将跳过历史聊天记录"
+        elif player_messages:
             progress = f"正在读取 {len(player_messages)} 条发言"
         else:
             progress = "没有读到足够发言，先按玩具测试样例"
