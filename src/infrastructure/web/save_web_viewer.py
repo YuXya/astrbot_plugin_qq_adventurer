@@ -100,7 +100,10 @@ class SaveWebViewer:
             f"""
             <h1>异世界存档</h1>
             <p class="muted">只读查看页。关闭网页命令会立即使当前令牌失效。</p>
-            <p><a href="/editable?token={self._e(self.token)}">编辑世界背景和文本补全</a></p>
+            <p class="nav-actions">
+              <a class="button-link" href="/editable?category=world_background&token={self._e(self.token)}">编辑世界背景</a>
+              <a class="button-link" href="/editable?category=text_completion&token={self._e(self.token)}">编辑文本补全</a>
+            </p>
             <table>
               <thead>
                 <tr>
@@ -117,37 +120,30 @@ class SaveWebViewer:
         if not self._is_authorized(request):
             return self._forbidden()
 
+        selected_category = request.query.get("category", "world_background")
+        category_titles = {
+            "world_background": "世界背景",
+            "text_completion": "文本补全",
+        }
+        category_descriptions = {
+            "world_background": "影响异世界公共设定、地点、魔物、种族和职业等背景内容。",
+            "text_completion": "管理发给 AI 的 Prompt、System Prompt 和世界书注入话术。",
+        }
+        if selected_category not in category_titles:
+            raise web.HTTPBadRequest(text="invalid editable category")
+
         items = self.editable_manager.list_editable_files()
-        sections = [
-            (
-                "世界背景",
-                "影响异世界公共设定、地点、魔物、种族和职业等背景内容。",
-                self._editable_rows(items, "world_background"),
-            ),
-            (
-                "文本补全",
-                "管理发给 AI 的 Prompt、System Prompt 和世界书注入话术。",
-                self._editable_rows(items, "text_completion"),
-            ),
-            (
-                "其他资源",
-                "尚未归类的可编辑资源。",
-                self._editable_rows(items, "other"),
-            ),
-        ]
-        section_html = "\n".join(
-            self._editable_section(title, description, rows)
-            for title, description, rows in sections
-            if rows
-        )
+        rows = self._editable_rows(items, selected_category)
+        title = category_titles[selected_category]
+        description = category_descriptions[selected_category]
 
         return self._html_response(
-            "资源管理",
+            title,
             f"""
-            <h1>资源管理</h1>
+            <h1>{self._e(title)}</h1>
             <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
             <p class="muted">保存时会自动备份旧文件。世界书 default.json 会先做 JSON 校验。</p>
-            {section_html}
+            {self._editable_table(description, rows)}
             """,
         )
 
@@ -158,6 +154,7 @@ class SaveWebViewer:
         file_id = request.query.get("id", "")
         if not self._is_editable_file(file_id):
             raise web.HTTPBadRequest(text="invalid editable file")
+        back_category = self._editable_back_category(request.query.get("category"), file_id)
         content = self.editable_manager.read_text(file_id)
         note = self.editable_manager.read_note(file_id)
         meta = self._editable_file_meta(file_id)
@@ -167,10 +164,11 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?token={self._e(self.token)}">返回资源管理</a></p>
+            <p><a href="/editable?category={self._e(back_category)}&token={self._e(self.token)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
             <form method="post" action="/editable/save?token={self._e(self.token)}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
               <label for="note">资源说明 / 注释</label>
               <textarea id="note" class="note-editor" name="note" spellcheck="false">{self._e(note)}</textarea>
               <label for="content">资源正文</label>
@@ -181,6 +179,7 @@ class SaveWebViewer:
             </form>
             <form method="post" action="/editable/reset?token={self._e(self.token)}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
               <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
             </form>
             """,
@@ -192,6 +191,7 @@ class SaveWebViewer:
 
         data = await request.post()
         file_id = str(data.get("id", ""))
+        category = self._editable_back_category(str(data.get("category", "")), file_id)
         note = str(data.get("note", ""))
         content = str(data.get("content", ""))
         if not self._is_editable_file(file_id):
@@ -210,13 +210,13 @@ class SaveWebViewer:
                 f"""
                 <h1>保存失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}">返回编辑</a></p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}"
+            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}"
         )
 
     async def _editable_reset(self, request: web.Request) -> web.Response:
@@ -225,6 +225,7 @@ class SaveWebViewer:
 
         data = await request.post()
         file_id = str(data.get("id", ""))
+        category = self._editable_back_category(str(data.get("category", "")), file_id)
         if not self._is_editable_file(file_id):
             raise web.HTTPBadRequest(text="invalid editable file")
 
@@ -237,13 +238,13 @@ class SaveWebViewer:
                 f"""
                 <h1>恢复默认失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}">返回编辑</a></p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&token={self._e(self.token)}"
+            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}"
         )
 
     async def _player_detail(self, request: web.Request) -> web.Response:
@@ -316,6 +317,9 @@ class SaveWebViewer:
     th {{ background: #eef2f6; color: #3a4350; }}
     a {{ color: #1f6feb; text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
+    .nav-actions {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0 18px; }}
+    .button-link {{ display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; }}
+    .button-link:hover {{ text-decoration: none; background: #1a5fc9; }}
     label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
     textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; }}
     textarea.note-editor {{ min-height: 132px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
@@ -386,21 +390,18 @@ class SaveWebViewer:
             )
         return rows
 
-    def _editable_section(
+    def _editable_table(
         self,
-        title: str,
         description: str,
         rows: list[str],
     ) -> str:
+        body = "".join(rows) or "<tr><td colspan=\"4\">没有可编辑资源。</td></tr>"
         return f"""
-            <section>
-              <h2>{self._e(title)}</h2>
               <p class="muted">{self._e(description)}</p>
               <table>
                 <thead><tr><th>名称</th><th>文件</th><th>类型</th><th>说明</th></tr></thead>
-                <tbody>{"".join(rows)}</tbody>
+                <tbody>{body}</tbody>
               </table>
-            </section>
         """
 
     def _editable_file_meta(self, file_id: str) -> dict[str, str] | None:
@@ -408,3 +409,17 @@ class SaveWebViewer:
             if item["id"] == file_id:
                 return item
         return None
+
+    def _editable_back_category(self, category: str | None, file_id: str) -> str:
+        if category in {"world_background", "text_completion"}:
+            return str(category)
+        meta = self._editable_file_meta(file_id)
+        if meta and meta.get("category") in {"world_background", "text_completion"}:
+            return str(meta["category"])
+        return "world_background"
+
+    @staticmethod
+    def _editable_category_title(category: str) -> str:
+        if category == "text_completion":
+            return "文本补全"
+        return "世界背景"
