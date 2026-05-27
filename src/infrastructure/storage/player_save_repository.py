@@ -160,6 +160,8 @@ class PlayerSaveRepository:
                 "title": card.title,
                 "action": card.action,
                 "location": card.location,
+                "diary": card.diary,
+                "encounter": card.encounter,
                 "level_change": card.level_change,
                 "result": card.result,
                 "rewards": card.rewards,
@@ -223,6 +225,29 @@ class PlayerSaveRepository:
             "logs": self._read_recent_logs(user_dir / "adventure_log.jsonl", limit=80),
         }
 
+    def delete_adventure_log(self, group_id: str, user_id: str, log_index: int) -> bool:
+        user_dir = self.get_user_dir(group_id, user_id)
+        log_path = user_dir / "adventure_log.jsonl"
+        root = self.root_dir.resolve()
+        target = log_path.resolve()
+        if root != target and root not in target.parents:
+            raise ValueError(f"非法日志路径: {target}")
+        if not log_path.exists():
+            return False
+
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        if log_index < 0 or log_index >= len(lines):
+            return False
+
+        del lines[log_index]
+        tmp_path = log_path.with_suffix(log_path.suffix + ".tmp")
+        text = "\n".join(lines)
+        if text:
+            text += "\n"
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(log_path)
+        return True
+
     def delete_player_save(self, group_id: str, user_id: str) -> bool:
         user_dir = self.get_user_dir(group_id, user_id)
         root = self.root_dir.resolve()
@@ -274,16 +299,19 @@ class PlayerSaveRepository:
         if not path.exists():
             return []
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()[-limit:]
+            all_lines = path.read_text(encoding="utf-8").splitlines()
+            start_index = max(0, len(all_lines) - limit)
+            lines = all_lines[start_index:]
         except Exception as exc:
             logger.warning(f"读取冒险日志失败: {path} {exc}")
             return []
 
         logs: list[dict[str, Any]] = []
-        for line in lines:
+        for offset, line in enumerate(lines):
             try:
                 item = json.loads(line)
                 if isinstance(item, dict):
+                    item["_log_index"] = start_index + offset
                     logs.append(item)
             except json.JSONDecodeError:
                 continue

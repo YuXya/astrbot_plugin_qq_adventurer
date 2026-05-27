@@ -40,6 +40,7 @@ class SaveWebViewer:
         app.router.add_get("/", self._index)
         app.router.add_get("/player", self._player_detail)
         app.router.add_post("/player/delete", self._player_delete)
+        app.router.add_post("/player/log/delete", self._player_log_delete)
         app.router.add_get("/editable", self._editable_index)
         app.router.add_get("/editable/file", self._editable_file)
         app.router.add_post("/editable/save", self._editable_save)
@@ -678,13 +679,41 @@ class SaveWebViewer:
         if detail is None:
             raise web.HTTPNotFound(text="save not found")
 
+        profile = detail.get("profile", {})
+        state = detail.get("state", {})
+        logs = detail.get("logs", [])
+        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        title_name = card.get("target_name") or profile.get("nickname") or user_id
+        summary = self._player_summary_html(group_id, user_id, profile, state, card)
+        log_cards = self._player_log_cards(group_id, user_id, logs)
+
         return self._html_response(
-            "玩家存档",
+            f"玩家存档 - {title_name}",
             f"""
-            <h1>玩家存档</h1>
+            <h1>{self._e(title_name)}</h1>
             <p class="nav-actions">
               <a class="button-link secondary-link" href="/?token={self._e(self.token)}">返回列表</a>
             </p>
+            {summary}
+            <section class="detail-panel">
+              <div class="section-head">
+                <div>
+                  <h2>冒险记录</h2>
+                  <p class="muted">删除单条记录只会移除 adventure_log.jsonl 中对应一行，不会回滚当前 state。</p>
+                </div>
+              </div>
+              <div class="log-list">{log_cards}</div>
+            </section>
+            <section class="detail-grid raw-grid">
+              <details class="raw-panel">
+                <summary>查看 profile.json</summary>
+                <pre>{self._e_json(profile)}</pre>
+              </details>
+              <details class="raw-panel">
+                <summary>查看 state.json</summary>
+                <pre>{self._e_json(state)}</pre>
+              </details>
+            </section>
             <form class="danger-zone" method="post" action="/player/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
               <input type="hidden" name="group_id" value="{self._e(group_id)}">
               <input type="hidden" name="user_id" value="{self._e(user_id)}">
@@ -692,19 +721,172 @@ class SaveWebViewer:
               <span>删除该玩家的 profile、state 和 adventure_log。</span>
               <button class="danger" type="submit">删除玩家存档</button>
             </form>
-            <section>
-              <h2>Profile</h2>
-              <pre>{self._e_json(detail.get("profile", {}))}</pre>
-            </section>
-            <section>
-              <h2>State</h2>
-              <pre>{self._e_json(detail.get("state", {}))}</pre>
-            </section>
-            <section>
-              <h2>Adventure Log</h2>
-              <pre>{self._e_json(detail.get("logs", []))}</pre>
-            </section>
             """,
+        )
+
+    def _player_summary_html(
+        self,
+        group_id: str,
+        user_id: str,
+        profile: dict[str, Any],
+        state: dict[str, Any],
+        card: dict[str, Any],
+    ) -> str:
+        avatar_url = card.get("avatar_url") or ""
+        avatar_html = (
+            f"<img src=\"{self._e(avatar_url)}\" alt=\"avatar\">"
+            if avatar_url
+            else "<span>転</span>"
+        )
+        stats = card.get("stats") if isinstance(card.get("stats"), dict) else {}
+        stat_items = "".join(
+            f"<div class=\"stat-pill\"><span>{self._e(key)}</span><strong>{self._e(value)}</strong></div>"
+            for key, value in stats.items()
+        ) or "<div class=\"stat-pill\"><span>四维</span><strong>未记录</strong></div>"
+        likes = card.get("likes") if isinstance(card.get("likes"), list) else []
+        like_items = "".join(
+            f"<span class=\"tag\">{self._e(item)}</span>"
+            for item in likes[:8]
+        )
+        created_at = self._format_time(profile.get("created_at"))
+        updated_at = self._format_time(state.get("updated_at") or profile.get("updated_at"))
+        return f"""
+            <section class="hero-card">
+              <div class="avatar-large">{avatar_html}</div>
+              <div class="hero-main">
+                <div class="kicker">群 {self._e(group_id)} / 用户 {self._e(user_id)}</div>
+                <h2>{self._e(card.get("title") or "异世界转生人物卡")}</h2>
+                <p class="subtitle">{self._e(card.get("subtitle") or "")}</p>
+                <div class="identity-line">
+                  <span>Lv.{self._e(state.get("level", 1))}</span>
+                  <span>{self._e(card.get("race") or "未知种族")}</span>
+                  <span>{self._e(card.get("class_name") or "未知职阶")}</span>
+                  <span>{self._e(state.get("location") or "未知地点")}</span>
+                </div>
+              </div>
+            </section>
+            <section class="detail-grid">
+              <article class="detail-panel">
+                <h2>角色档案</h2>
+                {self._profile_field("外貌", card.get("appearance"))}
+                {self._profile_field("性格", card.get("personality"))}
+                {self._profile_field("天赋", card.get("talent"))}
+                {self._profile_field("台词", card.get("quote"))}
+              </article>
+              <article class="detail-panel">
+                <h2>当前状态</h2>
+                <div class="stats-grid">{stat_items}</div>
+                <div class="tag-row">{like_items}</div>
+                <div class="meta-list">
+                  <div><span>HP</span><strong>{self._e(state.get("hp", 100))}</strong></div>
+                  <div><span>MP</span><strong>{self._e(state.get("mp", 100))}</strong></div>
+                  <div><span>金币</span><strong>{self._e(state.get("gold", 0))}</strong></div>
+                  <div><span>创建</span><strong>{self._e(created_at)}</strong></div>
+                  <div><span>更新</span><strong>{self._e(updated_at)}</strong></div>
+                </div>
+              </article>
+            </section>
+        """
+
+    def _profile_field(self, label: str, value: object) -> str:
+        return f"""
+            <div class="profile-field">
+              <span>{self._e(label)}</span>
+              <p>{self._e(value or "未记录")}</p>
+            </div>
+        """
+
+    def _player_log_cards(
+        self,
+        group_id: str,
+        user_id: str,
+        logs: list[dict[str, Any]],
+    ) -> str:
+        if not logs:
+            return "<p class=\"muted empty-state\">还没有冒险记录。</p>"
+
+        cards: list[str] = []
+        for display_index, log in enumerate(reversed(logs), start=1):
+            log_index = int(log.get("_log_index", -1))
+            raw_log_type = str(log.get("type", "log"))
+            log_type = self._e(raw_log_type)
+            title = self._e(log.get("title") or log.get("message") or "冒险记录")
+            action = self._e(log.get("action") or "")
+            location = self._e(log.get("location") or "")
+            level_change = self._e(log.get("level_change") or "")
+            diary = self._e(log.get("diary") or "")
+            encounter = self._e(log.get("encounter") or "")
+            result = self._e(log.get("result") or log.get("message") or "")
+            rewards = log.get("rewards") if isinstance(log.get("rewards"), list) else []
+            reward_html = "".join(f"<span class=\"tag\">{self._e(item)}</span>" for item in rewards)
+            created_at = self._format_time(log.get("created_at"))
+            location_html = f"<span>{location}</span>" if location else ""
+            level_html = f"<span>{level_change}</span>" if level_change else ""
+            action_html = f"<p class=\"log-action\">{action}</p>" if action else ""
+            diary_html = f"<p class=\"log-result\">{diary}</p>" if diary else ""
+            encounter_html = (
+                f"<p class=\"log-action\">遭遇：{encounter}</p>"
+                if encounter
+                else ""
+            )
+            rewards_block = (
+                f"<div class=\"tag-row\">{reward_html}</div>"
+                if reward_html
+                else ""
+            )
+            delete_button = ""
+            if log_index >= 0 and raw_log_type == "adventure_diary":
+                delete_button = f"""
+                  <form class="inline-form" method="post" action="/player/log/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
+                    <input type="hidden" name="group_id" value="{self._e(group_id)}">
+                    <input type="hidden" name="user_id" value="{self._e(user_id)}">
+                    <input type="hidden" name="log_index" value="{log_index}">
+                    <button class="danger compact-button" type="submit">删除记录</button>
+                  </form>
+                """
+            cards.append(
+                f"""
+                <article class="log-card">
+                  <div class="log-card-head">
+                    <div>
+                      <span class="log-index">#{display_index}</span>
+                      <h3>{title}</h3>
+                    </div>
+                    {delete_button}
+                  </div>
+                  <div class="log-meta">
+                    <span>{self._e(created_at)}</span>
+                    <span>{log_type}</span>
+                    {location_html}
+                    {level_html}
+                  </div>
+                  {action_html}
+                  {diary_html}
+                  {encounter_html}
+                  <p class="log-result">{result}</p>
+                  {rewards_block}
+                </article>
+                """
+            )
+        return "\n".join(cards)
+
+    async def _player_log_delete(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", ""))
+        user_id = str(data.get("user_id", ""))
+        try:
+            log_index = int(data.get("log_index", -1))
+        except (TypeError, ValueError):
+            log_index = -1
+        if not group_id or not user_id or log_index < 0:
+            raise web.HTTPBadRequest(text="missing group_id, user_id or log_index")
+
+        self.repository.delete_adventure_log(group_id, user_id, log_index)
+        raise web.HTTPFound(
+            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}&token={self._e(self.token)}"
         )
 
     async def _player_delete(self, request: web.Request) -> web.Response:
@@ -802,8 +984,48 @@ class SaveWebViewer:
     .block-field {{ margin-top: 12px; }}
     textarea.keys-editor {{ min-height: 72px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
     textarea.entry-content-editor {{ min-height: 112px; }}
+    .hero-card {{ display: flex; gap: 20px; align-items: center; margin: 18px 0 18px; padding: 20px; border: 1px solid #d9e1eb; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
+    .avatar-large {{ width: 92px; height: 92px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 8px; border: 1px solid #d8e0eb; background: #f0f4f8; color: #59636e; font-size: 34px; font-weight: 900; }}
+    .avatar-large img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
+    .hero-main h2 {{ margin: 4px 0 6px; font-size: 22px; }}
+    .kicker {{ color: #68707d; font-size: 13px; }}
+    .subtitle {{ margin: 0 0 12px; color: #3a4350; }}
+    .identity-line {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .identity-line span, .tag {{ display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border-radius: 6px; background: #eef4fa; border: 1px solid #d8e0eb; color: #263241; font-size: 13px; font-weight: 700; }}
+    .detail-grid {{ display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 16px; margin: 16px 0; }}
+    .detail-panel, .raw-panel, .log-card {{ border: 1px solid #dde2ea; border-radius: 8px; background: #fff; box-shadow: 0 8px 22px rgba(31, 41, 55, 0.05); }}
+    .detail-panel {{ padding: 18px; }}
+    .detail-panel h2 {{ margin-top: 0; }}
+    .profile-field {{ padding: 12px 0; border-top: 1px solid #edf1f5; }}
+    .profile-field:first-of-type {{ border-top: 0; }}
+    .profile-field span {{ display: block; margin-bottom: 5px; color: #68707d; font-size: 13px; font-weight: 800; }}
+    .profile-field p {{ margin: 0; line-height: 1.7; }}
+    .stats-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }}
+    .stat-pill {{ padding: 12px; border-radius: 8px; background: #f7fafc; border: 1px solid #dde2ea; }}
+    .stat-pill span, .meta-list span {{ display: block; color: #68707d; font-size: 12px; font-weight: 800; }}
+    .stat-pill strong {{ display: block; margin-top: 3px; font-size: 22px; color: #172033; }}
+    .tag-row {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }}
+    .meta-list {{ display: grid; gap: 8px; margin-top: 16px; }}
+    .meta-list div {{ display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid #edf1f5; }}
+    .section-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
+    .section-head h2 {{ margin-bottom: 4px; }}
+    .log-list {{ display: grid; gap: 12px; }}
+    .log-card {{ padding: 15px; }}
+    .log-card-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
+    .log-card h3 {{ margin: 2px 0 0; font-size: 17px; }}
+    .log-index {{ color: #68707d; font-size: 12px; font-weight: 800; }}
+    .log-meta {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; color: #59636e; font-size: 13px; }}
+    .log-meta span {{ padding: 3px 8px; border-radius: 6px; background: #f3f6fb; border: 1px solid #e1e7ef; }}
+    .log-action {{ margin: 10px 0 6px; color: #303846; font-weight: 700; }}
+    .log-result {{ margin: 0; line-height: 1.7; color: #263241; }}
+    .raw-grid {{ grid-template-columns: 1fr 1fr; }}
+    .raw-panel {{ padding: 0; overflow: hidden; }}
+    .raw-panel summary {{ padding: 13px 15px; cursor: pointer; font-weight: 800; background: #f8fafc; }}
+    .raw-panel pre {{ margin: 0; border-radius: 0; }}
+    .empty-state {{ padding: 18px; background: #fff; border: 1px dashed #c8d0dc; border-radius: 8px; }}
     @media (max-width: 900px) {{ .world-entry-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
-    @media (max-width: 720px) {{ .world-entry-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} }}
+    @media (max-width: 900px) {{ .detail-grid, .raw-grid {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 720px) {{ .world-entry-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} .hero-card {{ align-items: flex-start; }} .log-card-head {{ flex-direction: column; }} }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>
 </head>
