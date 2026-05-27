@@ -39,6 +39,7 @@ class SaveWebViewer:
         app = web.Application()
         app.router.add_get("/", self._index)
         app.router.add_get("/player", self._player_detail)
+        app.router.add_post("/player/delete", self._player_delete)
         app.router.add_get("/editable", self._editable_index)
         app.router.add_get("/editable/file", self._editable_file)
         app.router.add_post("/editable/save", self._editable_save)
@@ -81,6 +82,14 @@ class SaveWebViewer:
             location = self._e(item.get("location", ""))
             updated_at = self._format_time(item.get("updated_at"))
             href = f"/player?group_id={group_id}&user_id={user_id}&token={self._e(self.token)}"
+            delete_form = (
+                f"<form class=\"inline-form\" method=\"post\" action=\"/player/delete?token={self._e(self.token)}\" "
+                "onsubmit=\"return confirm('确定删除这个玩家存档？此操作不可恢复。');\">"
+                f"<input type=\"hidden\" name=\"group_id\" value=\"{group_id}\">"
+                f"<input type=\"hidden\" name=\"user_id\" value=\"{user_id}\">"
+                "<button class=\"danger compact-button\" type=\"submit\">删除</button>"
+                "</form>"
+            )
             rows.append(
                 "<tr>"
                 f"<td>{group_id}</td>"
@@ -91,10 +100,11 @@ class SaveWebViewer:
                 f"<td>{level}</td>"
                 f"<td>{location}</td>"
                 f"<td>{updated_at}</td>"
+                f"<td>{delete_form}</td>"
                 "</tr>"
             )
 
-        body = "\n".join(rows) or "<tr><td colspan=\"8\">还没有任何玩家存档。</td></tr>"
+        body = "\n".join(rows) or "<tr><td colspan=\"9\">还没有任何玩家存档。</td></tr>"
         return self._html_response(
             "异世界存档",
             f"""
@@ -108,7 +118,7 @@ class SaveWebViewer:
               <thead>
                 <tr>
                   <th>群</th><th>用户</th><th>角色</th>
-                  <th>种族</th><th>职阶</th><th>等级</th><th>地点</th><th>更新时间</th>
+                  <th>种族</th><th>职阶</th><th>等级</th><th>地点</th><th>更新时间</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>{body}</tbody>
@@ -274,6 +284,7 @@ class SaveWebViewer:
               const addEntryButton = document.getElementById("add-entry");
               const form = document.getElementById("world-book-form");
               const contentInput = document.getElementById("world-book-content");
+              const openStateStorageKey = "qq_adventurer:world_book:open_entries:default";
               let draggingIndex = null;
               let openEntryKeys = new Set();
               let hasCapturedOpenState = false;
@@ -346,6 +357,35 @@ class SaveWebViewer:
                     return key && details && details.open ? [key] : [];
                   }})
                 );
+                persistOpenState();
+              }}
+
+              function loadOpenState() {{
+                try {{
+                  const raw = localStorage.getItem(openStateStorageKey);
+                  if (!raw) {{
+                    return;
+                  }}
+                  const data = JSON.parse(raw);
+                  if (!data || !Array.isArray(data.openKeys)) {{
+                    return;
+                  }}
+                  openEntryKeys = new Set(data.openKeys.map((key) => String(key)));
+                  hasCapturedOpenState = true;
+                }} catch (error) {{
+                  console.warn("failed to load world book open state", error);
+                }}
+              }}
+
+              function persistOpenState() {{
+                try {{
+                  localStorage.setItem(
+                    openStateStorageKey,
+                    JSON.stringify({{ openKeys: Array.from(openEntryKeys) }})
+                  );
+                }} catch (error) {{
+                  console.warn("failed to save world book open state", error);
+                }}
               }}
 
               function renderEntries() {{
@@ -354,7 +394,7 @@ class SaveWebViewer:
                   const normalized = normalizeEntry(entry, index);
                   const summaryTitle = normalized.title || normalized.id || `条目 ${{index + 1}}`;
                   const entryKey = entryDomKey(normalized, index);
-                  const isOpen = !hasCapturedOpenState || openEntryKeys.has(entryKey);
+                  const isOpen = hasCapturedOpenState && openEntryKeys.has(entryKey);
                   const card = document.createElement("section");
                   card.className = "world-entry";
                   card.dataset.entryKey = entryKey;
@@ -388,6 +428,16 @@ class SaveWebViewer:
                       </div>
                     </details>
                   `;
+                  const detailsEl = card.querySelector("details");
+                  detailsEl.addEventListener("toggle", () => {{
+                    if (detailsEl.open) {{
+                      openEntryKeys.add(entryKey);
+                    }} else {{
+                      openEntryKeys.delete(entryKey);
+                    }}
+                    hasCapturedOpenState = true;
+                    persistOpenState();
+                  }});
                   card.querySelector(".summary-check").addEventListener("click", (event) => {{
                     event.stopPropagation();
                   }});
@@ -438,6 +488,7 @@ class SaveWebViewer:
                     syncFromDom();
                     state.entries.splice(index, 1);
                     openEntryKeys.delete(entryKey);
+                    persistOpenState();
                     renderEntries();
                   }});
                   const titleInput = card.querySelector("[data-field='title']");
@@ -484,6 +535,7 @@ class SaveWebViewer:
                 const newEntry = entryDefaults(state.entries.length);
                 state.entries.push(newEntry);
                 openEntryKeys.add(entryDomKey(newEntry, state.entries.length - 1));
+                persistOpenState();
                 renderEntries();
               }});
 
@@ -493,6 +545,7 @@ class SaveWebViewer:
               }});
 
               state.entries = state.entries.map(normalizeEntry);
+              loadOpenState();
               renderEntries();
             </script>
             """,
@@ -629,7 +682,16 @@ class SaveWebViewer:
             "玩家存档",
             f"""
             <h1>玩家存档</h1>
-            <p><a href="/?token={self._e(self.token)}">返回列表</a></p>
+            <p class="nav-actions">
+              <a class="button-link secondary-link" href="/?token={self._e(self.token)}">返回列表</a>
+            </p>
+            <form class="danger-zone" method="post" action="/player/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
+              <input type="hidden" name="group_id" value="{self._e(group_id)}">
+              <input type="hidden" name="user_id" value="{self._e(user_id)}">
+              <strong>危险操作</strong>
+              <span>删除该玩家的 profile、state 和 adventure_log。</span>
+              <button class="danger" type="submit">删除玩家存档</button>
+            </form>
             <section>
               <h2>Profile</h2>
               <pre>{self._e_json(detail.get("profile", {}))}</pre>
@@ -644,6 +706,19 @@ class SaveWebViewer:
             </section>
             """,
         )
+
+    async def _player_delete(self, request: web.Request) -> web.Response:
+        if not self._is_authorized(request):
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", ""))
+        user_id = str(data.get("user_id", ""))
+        if not group_id or not user_id:
+            raise web.HTTPBadRequest(text="missing group_id or user_id")
+
+        self.repository.delete_player_save(group_id, user_id)
+        raise web.HTTPFound(f"/?token={self._e(self.token)}")
 
     def _is_authorized(self, request: web.Request) -> bool:
         query_token = request.query.get("token", "")
@@ -688,6 +763,10 @@ class SaveWebViewer:
     .nav-actions {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0 18px; }}
     .button-link {{ display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; }}
     .button-link:hover {{ text-decoration: none; background: #1a5fc9; }}
+    .secondary-link {{ background: #59636e; }}
+    .secondary-link:hover {{ background: #46515d; }}
+    .inline-form {{ display: inline; margin: 0; }}
+    .compact-button {{ margin: 0; padding: 6px 10px; font-size: 13px; }}
     label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
     textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 7px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; background: #fbfdff; transition: border-color .15s ease, box-shadow .15s ease; }}
     textarea:focus, input:focus, select:focus {{ outline: none; border-color: #1f6feb !important; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.13); }}
@@ -696,8 +775,11 @@ class SaveWebViewer:
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
     button.secondary {{ background: #59636e; }}
     button.danger {{ margin-top: 0; background: #b42318; }}
+    button.danger:hover {{ background: #931f15; }}
     .actions {{ display: flex; gap: 10px; align-items: center; }}
     .error {{ color: #b42318; font-weight: 700; }}
+    .danger-zone {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 22px; padding: 14px 16px; border: 1px solid #f0b8b0; border-radius: 8px; background: #fff5f3; color: #6f1d15; }}
+    .danger-zone span {{ color: #7a3b34; }}
     .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0 12px; padding: 16px 18px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
     .world-book-toolbar h2 {{ margin-top: 0; }}
     #world-book-entries {{ display: grid; gap: 12px; }}

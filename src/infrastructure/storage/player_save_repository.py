@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
@@ -221,6 +222,27 @@ class PlayerSaveRepository:
             "state": self._read_json(user_dir / "state.json"),
             "logs": self._read_recent_logs(user_dir / "adventure_log.jsonl", limit=80),
         }
+
+    def delete_player_save(self, group_id: str, user_id: str) -> bool:
+        user_dir = self.get_user_dir(group_id, user_id)
+        root = self.root_dir.resolve()
+        target = user_dir.resolve()
+        if root != target and root not in target.parents:
+            raise ValueError(f"非法存档路径: {target}")
+        if not user_dir.exists():
+            return False
+
+        shutil.rmtree(user_dir)
+        self._cleanup_empty_parent_dirs(user_dir)
+        return True
+
+    def _cleanup_empty_parent_dirs(self, user_dir: Path) -> None:
+        for path in [user_dir.parent, user_dir.parent.parent]:
+            try:
+                if path.exists() and path.is_dir() and not any(path.iterdir()):
+                    path.rmdir()
+            except Exception:
+                break
 
     def _touch_state_updated_at(self, state_path: Path, now: int) -> None:
         state = self._read_json(state_path)
