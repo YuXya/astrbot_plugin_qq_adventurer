@@ -39,7 +39,7 @@ class AdventureDiaryDomainService:
             action=action[:120],
             date_label=self._clean_text(raw.get("date_label"), "第 1 次冒险")[:32],
             location=location[:48],
-            diary=self._clean_text(raw.get("diary"), "今天的冒险平稳结束，旅途留下了新的脚印。")[:900],
+            diary=self._clean_text(raw.get("diary"), "今天的冒险平稳结束，旅途留下了新的脚印。"),
             encounter=self._clean_text(raw.get("encounter"), "遇到了一些值得记录的小事件。")[:220],
             result=self._clean_text(raw.get("result"), "安全归来，并整理了新的见闻。")[:220],
             level_change=level_change,
