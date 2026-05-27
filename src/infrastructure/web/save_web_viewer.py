@@ -274,6 +274,7 @@ class SaveWebViewer:
               const addEntryButton = document.getElementById("add-entry");
               const form = document.getElementById("world-book-form");
               const contentInput = document.getElementById("world-book-content");
+              let draggingIndex = null;
 
               const state = {{
                 ...initialWorldBook,
@@ -337,6 +338,7 @@ class SaveWebViewer:
                   card.innerHTML = `
                     <details open>
                       <summary class="world-entry-head">
+                        <button class="drag-handle" type="button" data-action="drag" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
                         <span class="entry-title">${{escapeHtml(summaryTitle)}}</span>
                         <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
                         <button class="danger" type="button" data-action="delete">删除</button>
@@ -365,6 +367,43 @@ class SaveWebViewer:
                   card.querySelector(".summary-check").addEventListener("click", (event) => {{
                     event.stopPropagation();
                   }});
+                  const dragHandle = card.querySelector("[data-action='drag']");
+                  dragHandle.addEventListener("click", (event) => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }});
+                  dragHandle.addEventListener("dragstart", (event) => {{
+                    syncFromDom();
+                    draggingIndex = index;
+                    card.classList.add("dragging");
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", String(index));
+                  }});
+                  dragHandle.addEventListener("dragend", () => {{
+                    draggingIndex = null;
+                    card.classList.remove("dragging");
+                    entriesEl.querySelectorAll(".drag-over").forEach((item) => item.classList.remove("drag-over"));
+                  }});
+                  card.addEventListener("dragover", (event) => {{
+                    if (draggingIndex === null || draggingIndex === index) {{
+                      return;
+                    }}
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    card.classList.add("drag-over");
+                  }});
+                  card.addEventListener("dragleave", () => {{
+                    card.classList.remove("drag-over");
+                  }});
+                  card.addEventListener("drop", (event) => {{
+                    event.preventDefault();
+                    card.classList.remove("drag-over");
+                    if (draggingIndex === null || draggingIndex === index) {{
+                      return;
+                    }}
+                    reorderEntries(draggingIndex, index);
+                    draggingIndex = null;
+                  }});
                   card.querySelector("[data-action='delete']").addEventListener("click", (event) => {{
                     event.preventDefault();
                     event.stopPropagation();
@@ -385,6 +424,18 @@ class SaveWebViewer:
                   idInput.addEventListener("input", refreshSummaryTitle);
                   entriesEl.appendChild(card);
                 }});
+              }}
+
+              function reorderEntries(fromIndex, toIndex) {{
+                syncFromDom();
+                const nextEntries = [...state.entries];
+                const [moved] = nextEntries.splice(fromIndex, 1);
+                nextEntries.splice(toIndex, 0, moved);
+                state.entries = nextEntries.map((entry, index) => ({{
+                  ...entry,
+                  order: (index + 1) * 100,
+                }}));
+                renderEntries();
               }}
 
               function escapeHtml(value) {{
@@ -593,12 +644,12 @@ class SaveWebViewer:
   <title>{self._e(title)}</title>
   <style>
     :root {{ color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    body {{ margin: 0; background: #f6f7f9; color: #20242a; }}
-    main {{ max-width: 1120px; margin: 0 auto; padding: 28px 18px 48px; }}
-    h1 {{ margin: 0 0 12px; font-size: 28px; }}
+    body {{ margin: 0; background: linear-gradient(180deg, #f3f6fb 0%, #eef3f8 42%, #f8fafc 100%); color: #20242a; -webkit-font-smoothing: antialiased; }}
+    main {{ max-width: 1160px; margin: 0 auto; padding: 30px 20px 52px; }}
+    h1 {{ margin: 0 0 12px; font-size: 30px; letter-spacing: 0; }}
     h2 {{ margin: 24px 0 10px; font-size: 18px; }}
     .muted {{ color: #68707d; }}
-    table {{ width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #dde2ea; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
     th, td {{ padding: 10px 12px; border-bottom: 1px solid #e6eaf0; text-align: left; font-size: 14px; }}
     th {{ background: #eef2f6; color: #3a4350; }}
     a {{ color: #1f6feb; text-decoration: none; }}
@@ -607,7 +658,8 @@ class SaveWebViewer:
     .button-link {{ display: inline-flex; align-items: center; justify-content: center; padding: 9px 16px; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; }}
     .button-link:hover {{ text-decoration: none; background: #1a5fc9; }}
     label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
-    textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; }}
+    textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 7px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; background: #fbfdff; transition: border-color .15s ease, box-shadow .15s ease; }}
+    textarea:focus, input:focus, select:focus {{ outline: none; border-color: #1f6feb !important; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.13); }}
     textarea.note-editor {{ min-height: 132px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     textarea.content-editor {{ min-height: 58vh; }}
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
@@ -615,20 +667,25 @@ class SaveWebViewer:
     button.danger {{ margin-top: 0; background: #b42318; }}
     .actions {{ display: flex; gap: 10px; align-items: center; }}
     .error {{ color: #b42318; font-weight: 700; }}
-    .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0 12px; }}
+    .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0 12px; padding: 16px 18px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
     .world-book-toolbar h2 {{ margin-top: 0; }}
-    .world-entry {{ margin: 12px 0; background: #fff; border: 1px solid #dde2ea; border-radius: 6px; }}
+    #world-book-entries {{ display: grid; gap: 12px; }}
+    .world-entry {{ margin: 0; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; box-shadow: 0 8px 22px rgba(31, 41, 55, 0.06); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
+    .world-entry.dragging {{ opacity: .45; transform: scale(.995); }}
+    .world-entry.drag-over {{ border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.14), 0 12px 28px rgba(31, 41, 55, 0.1); }}
     .world-entry details {{ padding: 0; }}
-    .world-entry-head {{ display: flex; gap: 12px; align-items: center; padding: 12px 14px; cursor: pointer; background: #eef2f6; border-radius: 6px; }}
-    .world-entry details[open] .world-entry-head {{ border-bottom: 1px solid #dde2ea; border-radius: 6px 6px 0 0; }}
-    .world-entry-head .entry-title {{ font-weight: 800; margin-right: auto; }}
+    .world-entry-head {{ display: flex; gap: 12px; align-items: center; padding: 13px 14px; cursor: pointer; background: linear-gradient(180deg, #f8fafc, #eef4fa); border-radius: 8px; }}
+    .world-entry details[open] .world-entry-head {{ border-bottom: 1px solid #dde2ea; border-radius: 8px 8px 0 0; }}
+    .world-entry-head .entry-title {{ font-weight: 800; margin-right: auto; color: #172033; }}
+    .drag-handle {{ flex: 0 0 auto; width: 32px; height: 32px; margin: 0; padding: 0; border-radius: 7px; border: 1px solid #c8d0dc; background: #fff; color: #536172; cursor: grab; font-size: 17px; line-height: 1; }}
+    .drag-handle:active {{ cursor: grabbing; }}
     .summary-check {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 700; cursor: default; }}
     .summary-check input {{ width: 18px; height: 18px; }}
-    .world-entry-body {{ padding: 14px; }}
+    .world-entry-body {{ padding: 16px; background: #fff; border-radius: 0 0 8px 8px; }}
     .world-entry-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }}
     .compact-field {{ display: flex; align-items: center; gap: 8px; margin: 0; }}
     .compact-field span {{ flex: 0 0 auto; color: #3a4350; }}
-    .world-entry input[type="text"], .world-entry input[type="number"], .world-entry select {{ width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 9px; border: 1px solid #c8d0dc; border-radius: 6px; font: inherit; background: #fff; }}
+    .world-entry input[type="text"], .world-entry input[type="number"], .world-entry select {{ width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 9px; border: 1px solid #c8d0dc; border-radius: 7px; font: inherit; background: #fbfdff; }}
     .block-field {{ margin-top: 12px; }}
     textarea.keys-editor {{ min-height: 72px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
     textarea.entry-content-editor {{ min-height: 112px; }}
