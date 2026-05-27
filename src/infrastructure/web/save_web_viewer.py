@@ -100,7 +100,7 @@ class SaveWebViewer:
             f"""
             <h1>异世界存档</h1>
             <p class="muted">只读查看页。关闭网页命令会立即使当前令牌失效。</p>
-            <p><a href="/editable?token={self._e(self.token)}">编辑世界书和 Prompt 话术</a></p>
+            <p><a href="/editable?token={self._e(self.token)}">编辑世界背景和文本补全</a></p>
             <table>
               <thead>
                 <tr>
@@ -117,36 +117,37 @@ class SaveWebViewer:
         if not self._is_authorized(request):
             return self._forbidden()
 
-        rows = []
-        for item in self.editable_manager.list_editable_files():
-            raw_file_id = item["id"]
-            file_id = self._e(raw_file_id)
-            label = self._e(item["label"])
-            file_type = self._e(item["type"])
-            note_preview = self._e(item.get("note_preview", ""))
-            href = (
-                f"/editable/file?id={quote(raw_file_id, safe='')}"
-                f"&token={self._e(self.token)}"
-            )
-            rows.append(
-                "<tr>"
-                f"<td><a href=\"{href}\">{label}</a></td>"
-                f"<td>{file_id}</td>"
-                f"<td>{file_type}</td>"
-                f"<td>{note_preview}</td>"
-                "</tr>"
-            )
+        items = self.editable_manager.list_editable_files()
+        sections = [
+            (
+                "世界背景",
+                "影响异世界公共设定、地点、魔物、种族和职业等背景内容。",
+                self._editable_rows(items, "world_background"),
+            ),
+            (
+                "文本补全",
+                "管理发给 AI 的 Prompt、System Prompt 和世界书注入话术。",
+                self._editable_rows(items, "text_completion"),
+            ),
+            (
+                "其他资源",
+                "尚未归类的可编辑资源。",
+                self._editable_rows(items, "other"),
+            ),
+        ]
+        section_html = "\n".join(
+            self._editable_section(title, description, rows)
+            for title, description, rows in sections
+            if rows
+        )
 
         return self._html_response(
-            "可编辑资源",
+            "资源管理",
             f"""
-            <h1>可编辑资源</h1>
+            <h1>资源管理</h1>
             <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
             <p class="muted">保存时会自动备份旧文件。世界书 default.json 会先做 JSON 校验。</p>
-            <table>
-              <thead><tr><th>名称</th><th>文件</th><th>类型</th><th>说明</th></tr></thead>
-              <tbody>{"".join(rows)}</tbody>
-            </table>
+            {section_html}
             """,
         )
 
@@ -166,7 +167,7 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?token={self._e(self.token)}">返回可编辑资源</a></p>
+            <p><a href="/editable?token={self._e(self.token)}">返回资源管理</a></p>
             <p class="muted">{self._e(file_id)}</p>
             <form method="post" action="/editable/save?token={self._e(self.token)}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
@@ -356,6 +357,51 @@ class SaveWebViewer:
         return file_id in {
             item["id"] for item in self.editable_manager.list_editable_files()
         }
+
+    def _editable_rows(self, items: list[dict[str, str]], category: str) -> list[str]:
+        rows = []
+        for item in items:
+            item_category = item.get("category") or "other"
+            if item_category not in {"world_background", "text_completion"}:
+                item_category = "other"
+            if item_category != category:
+                continue
+
+            raw_file_id = item["id"]
+            file_id = self._e(raw_file_id)
+            label = self._e(item["label"])
+            file_type = self._e(item["type"])
+            note_preview = self._e(item.get("note_preview", ""))
+            href = (
+                f"/editable/file?id={quote(raw_file_id, safe='')}"
+                f"&token={self._e(self.token)}"
+            )
+            rows.append(
+                "<tr>"
+                f"<td><a href=\"{href}\">{label}</a></td>"
+                f"<td>{file_id}</td>"
+                f"<td>{file_type}</td>"
+                f"<td>{note_preview}</td>"
+                "</tr>"
+            )
+        return rows
+
+    def _editable_section(
+        self,
+        title: str,
+        description: str,
+        rows: list[str],
+    ) -> str:
+        return f"""
+            <section>
+              <h2>{self._e(title)}</h2>
+              <p class="muted">{self._e(description)}</p>
+              <table>
+                <thead><tr><th>名称</th><th>文件</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>{"".join(rows)}</tbody>
+              </table>
+            </section>
+        """
 
     def _editable_file_meta(self, file_id: str) -> dict[str, str] | None:
         for item in self.editable_manager.list_editable_files():

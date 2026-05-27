@@ -135,41 +135,49 @@ class EditableResourceManager:
                 "id": "world_book/default.json",
                 "label": "世界书 default.json",
                 "type": "json",
+                "category": "world_background",
             },
             {
                 "id": self.PROMPT_FILES["reincarnation_prompt"],
                 "label": "转生卡 Prompt",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["adventure_diary_prompt"],
                 "label": "冒险日记 Prompt",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["adventure_diary_system_prompt"],
                 "label": "冒险日记第一人称人格 Prompt",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["persona_reinforcement"],
                 "label": "人格格式优先级 Prompt",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["default_system_prompt"],
                 "label": "默认 System Prompt",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["world_book_wrapper"],
                 "label": "世界书包装话术",
                 "type": "text",
+                "category": "text_completion",
             },
             {
                 "id": self.PROMPT_FILES["world_book_empty"],
                 "label": "世界书未命中话术",
                 "type": "text",
+                "category": "text_completion",
             },
         ]
 
