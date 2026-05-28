@@ -26,17 +26,18 @@ class PatchBookEngine:
             return ""
 
         base_path = self._book_base_path(book, "/主角/技能/技能名/")
-        lines = [
-            "技能书补充设定：",
-            f"默认 patch 基础路径：{base_path}",
-            "命中技能说明：",
-        ]
-        lines.extend(
+        entries_text = "\n".join(
             f"- {entry.title or entry.id}：{entry.content}"
             for entry in matched
             if entry.content
         )
-        return "\n".join(lines)
+        return self.editable_manager.render_prompt(
+            "skill_book_wrapper",
+            {
+                "base_path": base_path,
+                "entries": entries_text or "（暂无命中技能说明。）",
+            },
+        )
 
     def build_status_prompt_text(self, state: dict[str, Any]) -> str:
         book = self._load_book(self.editable_manager.status_book_path, "状态书")
@@ -58,26 +59,27 @@ class PatchBookEngine:
         ]
 
         base_path = self._book_base_path(book, "/主角/状态/状态名/")
-        lines = [
-            "状态书补充设定：",
-            f"默认 patch 基础路径：{base_path}",
-        ]
         if matched:
-            lines.append("已拥有状态说明：")
-            lines.extend(
+            owned_entries = "\n".join(
                 f"- {entry.title or entry.id}：{entry.content}"
                 for entry in matched
                 if entry.content
             )
         else:
-            lines.append("已拥有状态说明：（暂无命中。）")
+            owned_entries = "（暂无命中。）"
 
-        lines.append("待觉醒列表：")
         if pending_names:
-            lines.extend(f"- {name}" for name in pending_names)
+            pending_entries = "\n".join(f"- {name}" for name in pending_names)
         else:
-            lines.append("（暂无待觉醒状态。）")
-        return "\n".join(lines)
+            pending_entries = "（暂无待觉醒状态。）"
+        return self.editable_manager.render_prompt(
+            "status_book_wrapper",
+            {
+                "base_path": base_path,
+                "owned_entries": owned_entries,
+                "pending_entries": pending_entries,
+            },
+        )
 
     def _load_book(self, path: Path, label: str) -> dict[str, Any]:
         if not path.exists():

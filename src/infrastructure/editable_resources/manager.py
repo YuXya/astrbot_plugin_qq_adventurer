@@ -19,6 +19,8 @@ class EditableResourceManager:
         "persona_reinforcement": "prompts/persona_reinforcement.txt",
         "default_system_prompt": "prompts/default_system_prompt.txt",
         "world_book_wrapper": "prompts/world_book_wrapper.txt",
+        "skill_book_wrapper": "prompts/skill_book_wrapper.txt",
+        "status_book_wrapper": "prompts/status_book_wrapper.txt",
         "world_book_empty": "prompts/world_book_empty.txt",
     }
 
@@ -202,6 +204,18 @@ class EditableResourceManager:
                 "category": "text_completion",
             },
             {
+                "id": self.PROMPT_FILES["skill_book_wrapper"],
+                "label": "技能书包装话术",
+                "type": "text",
+                "category": "text_completion",
+            },
+            {
+                "id": self.PROMPT_FILES["status_book_wrapper"],
+                "label": "状态书包装话术",
+                "type": "text",
+                "category": "text_completion",
+            },
+            {
                 "id": self.PROMPT_FILES["world_book_empty"],
                 "label": "世界书未命中话术",
                 "type": "text",
@@ -222,6 +236,8 @@ class EditableResourceManager:
             self.PROMPT_FILES["persona_reinforcement"]: defaults.PERSONA_REINFORCEMENT_PROMPT,
             self.PROMPT_FILES["default_system_prompt"]: defaults.DEFAULT_SYSTEM_PROMPT,
             self.PROMPT_FILES["world_book_wrapper"]: defaults.WORLD_BOOK_WRAPPER,
+            self.PROMPT_FILES["skill_book_wrapper"]: defaults.SKILL_BOOK_WRAPPER,
+            self.PROMPT_FILES["status_book_wrapper"]: defaults.STATUS_BOOK_WRAPPER,
             self.PROMPT_FILES["world_book_empty"]: defaults.WORLD_BOOK_EMPTY,
         }
 
@@ -246,7 +262,8 @@ class EditableResourceManager:
             ),
             self.PROMPT_FILES["adventure_diary_prompt"]: (
                 "用于 /异世界冒险 的主任务 Prompt。它会组合玩家人物卡、当前状态、最近冒险日志、"
-                "本次行动和世界书补充设定，然后要求 AI 输出冒险日记卡 JSON。"
+                "本次行动和补充设定，然后要求 AI 输出冒险日记卡 JSON。补充设定变量为 {{supplement_text}}，"
+                "旧变量 {{world_book_text}} 仍兼容。"
             ),
             self.PROMPT_FILES["adventure_diary_system_prompt"]: (
                 "只用于 /异世界冒险 的 system_prompt。它由玩家转生人物卡中的名称、种族、职阶、"
@@ -261,8 +278,16 @@ class EditableResourceManager:
                 "会使用这里的内容；同一内容还会被人格格式优先级 Prompt 嵌入普通 Prompt。"
             ),
             self.PROMPT_FILES["world_book_wrapper"]: (
-                "当世界书命中至少一个条目时使用。命中的条目会先格式化为列表，再填入这里的 {{entries}}，"
-                "最终作为世界书补充设定嵌入转生卡或冒险日记的主任务 Prompt。"
+                "当世界书命中至少一个条目时使用。命中的条目会先格式化为列表，再填入这里的 {{entries}}。"
+                "它只包装世界背景条目，不包装技能书和状态书。"
+            ),
+            self.PROMPT_FILES["skill_book_wrapper"]: (
+                "当技能书命中至少一个条目时使用。可用变量：{{base_path}} 和 {{entries}}。"
+                "最终会嵌入冒险日记主任务 Prompt 的补充设定区域。"
+            ),
+            self.PROMPT_FILES["status_book_wrapper"]: (
+                "每次冒险日记生成时用于包装状态书内容。可用变量：{{base_path}}、{{owned_entries}}、{{pending_entries}}。"
+                "{{owned_entries}} 是已拥有状态说明，{{pending_entries}} 是未拥有状态标题列表。"
             ),
             self.PROMPT_FILES["world_book_empty"]: (
                 "当世界书没有命中任何条目时使用。它会作为占位文本嵌入转生卡或冒险日记的主任务 Prompt，"

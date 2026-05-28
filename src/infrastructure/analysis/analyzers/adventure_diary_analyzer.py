@@ -125,7 +125,7 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             self._format_logs_for_scan(logs),
         ]
         world_book_text = self.world_book_engine.build_prompt_text(scan_parts).prompt_text
-        patch_book_text = self._join_optional_prompt_parts(
+        supplement_text = self._join_optional_prompt_parts(
             [
                 world_book_text,
                 self.patch_book_engine.build_skill_prompt_text(scan_parts),
@@ -142,7 +142,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 "state_json": self._json_dump(state),
                 "logs_text": self._format_logs(logs),
                 "action": action,
-                "world_book_text": patch_book_text,
+                "supplement_text": supplement_text,
+                "world_book_text": supplement_text,
             },
         )
 
