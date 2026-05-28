@@ -1067,28 +1067,29 @@ class SaveWebViewer:
     .error {{ color: #b42318; font-weight: 700; }}
     .danger-zone {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 22px; padding: 14px 16px; border: 1px solid #f0b8b0; border-radius: 8px; background: #fff5f3; color: #6f1d15; }}
     .danger-zone span {{ color: #7a3b34; }}
-    .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin: 22px 0 12px; padding: 16px 18px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
-    .world-book-toolbar h2 {{ margin-top: 0; }}
-    #world-book-entries {{ display: grid; gap: 12px; }}
-    .world-entry {{ margin: 0; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; box-shadow: 0 8px 22px rgba(31, 41, 55, 0.06); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
+    .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin: 16px 0 8px; padding: 10px 12px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 6px 14px rgba(31, 41, 55, 0.05); }}
+    .world-book-toolbar h2 {{ margin: 0 0 3px; }}
+    .world-book-toolbar p {{ margin: 0; }}
+    #world-book-entries {{ display: grid; gap: 6px; }}
+    .world-entry {{ margin: 0; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; box-shadow: 0 3px 10px rgba(31, 41, 55, 0.04); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
     .world-entry.dragging {{ opacity: .45; transform: scale(.995); }}
     .world-entry.drag-over {{ border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.14), 0 12px 28px rgba(31, 41, 55, 0.1); }}
     .world-entry details {{ padding: 0; }}
-    .world-entry-head {{ display: flex; gap: 12px; align-items: center; padding: 13px 14px; cursor: pointer; background: linear-gradient(180deg, #f8fafc, #eef4fa); border-radius: 8px; }}
+    .world-entry-head {{ display: flex; gap: 8px; align-items: center; padding: 7px 10px; cursor: pointer; background: linear-gradient(180deg, #f8fafc, #eef4fa); border-radius: 8px; }}
     .world-entry details[open] .world-entry-head {{ border-bottom: 1px solid #dde2ea; border-radius: 8px 8px 0 0; }}
     .world-entry-head .entry-title {{ font-weight: 800; margin-right: auto; color: #172033; }}
-    .drag-handle {{ flex: 0 0 auto; width: 32px; height: 32px; margin: 0; padding: 0; border-radius: 7px; border: 1px solid #c8d0dc; background: #fff; color: #536172; cursor: grab; font-size: 17px; line-height: 1; }}
+    .drag-handle {{ flex: 0 0 auto; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #c8d0dc; background: #fff; color: #536172; cursor: grab; font-size: 15px; line-height: 1; }}
     .drag-handle:active {{ cursor: grabbing; }}
-    .summary-check {{ display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 700; cursor: default; }}
-    .summary-check input {{ width: 18px; height: 18px; }}
-    .world-entry-body {{ padding: 16px; background: #fff; border-radius: 0 0 8px 8px; }}
-    .world-entry-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }}
-    .compact-field {{ display: flex; align-items: center; gap: 8px; margin: 0; }}
+    .summary-check {{ display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 13px; font-weight: 700; cursor: default; }}
+    .summary-check input {{ width: 15px; height: 15px; }}
+    .world-entry-body {{ padding: 10px; background: #fff; border-radius: 0 0 8px 8px; }}
+    .world-entry-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }}
+    .compact-field {{ display: flex; align-items: center; gap: 6px; margin: 0; }}
     .compact-field span {{ flex: 0 0 auto; color: #3a4350; }}
-    .world-entry input[type="text"], .world-entry input[type="number"], .world-entry select {{ width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 9px; border: 1px solid #c8d0dc; border-radius: 7px; font: inherit; background: #fbfdff; }}
+    .world-entry input[type="text"], .world-entry input[type="number"], .world-entry select {{ width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid #c8d0dc; border-radius: 7px; font: inherit; background: #fbfdff; }}
     .block-field {{ margin-top: 12px; }}
-    textarea.keys-editor {{ min-height: 72px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
-    textarea.entry-content-editor {{ min-height: 112px; }}
+    textarea.keys-editor {{ min-height: 48px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
+    textarea.entry-content-editor {{ min-height: 78px; }}
     .hero-card {{ display: flex; gap: 20px; align-items: center; margin: 18px 0 18px; padding: 20px; border: 1px solid #d9e1eb; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
     .avatar-large {{ width: 92px; height: 92px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 8px; border: 1px solid #d8e0eb; background: #f0f4f8; color: #59636e; font-size: 34px; font-weight: 900; }}
     .avatar-large img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
