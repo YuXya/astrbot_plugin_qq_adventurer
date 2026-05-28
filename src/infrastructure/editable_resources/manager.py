@@ -31,6 +31,14 @@ class EditableResourceManager:
     def world_book_path(self) -> Path:
         return self.root_dir / "world_book" / "default.json"
 
+    @property
+    def skill_book_path(self) -> Path:
+        return self.root_dir / "skill_book" / "default.json"
+
+    @property
+    def status_book_path(self) -> Path:
+        return self.root_dir / "status_book" / "default.json"
+
     def get_prompt(self, name: str) -> str:
         relative = self.PROMPT_FILES[name]
         return self.read_text(relative)
@@ -65,6 +73,10 @@ class EditableResourceManager:
         json.loads(content)
         self.write_text("world_book/default.json", content)
 
+    def write_json_book(self, relative_path: str, content: str) -> None:
+        json.loads(content)
+        self.write_text(relative_path, content)
+
     def read_note(self, relative_path: str) -> str:
         if relative_path not in self._default_note_map():
             raise ValueError(f"资源没有说明: {relative_path}")
@@ -93,7 +105,11 @@ class EditableResourceManager:
             raise ValueError(f"资源没有默认内容: {relative_path}")
 
         content = defaults_map[relative_path]
-        if relative_path == "world_book/default.json":
+        if relative_path in {
+            "world_book/default.json",
+            "skill_book/default.json",
+            "status_book/default.json",
+        }:
             json.loads(content)
         self.write_text(relative_path, content)
 
@@ -134,6 +150,18 @@ class EditableResourceManager:
             {
                 "id": "world_book/default.json",
                 "label": "世界书 default.json",
+                "type": "json",
+                "category": "world_background",
+            },
+            {
+                "id": "skill_book/default.json",
+                "label": "技能书 default.json",
+                "type": "json",
+                "category": "world_background",
+            },
+            {
+                "id": "status_book/default.json",
+                "label": "状态书 default.json",
                 "type": "json",
                 "category": "world_background",
             },
@@ -184,6 +212,8 @@ class EditableResourceManager:
     def _default_content_map(self) -> dict[str, str]:
         return {
             "world_book/default.json": defaults.load_builtin_world_book(),
+            "skill_book/default.json": defaults.SKILL_BOOK_DEFAULT,
+            "status_book/default.json": defaults.STATUS_BOOK_DEFAULT,
             self.PROMPT_FILES["reincarnation_prompt"]: defaults.REINCARNATION_PROMPT,
             self.PROMPT_FILES["adventure_diary_prompt"]: defaults.ADVENTURE_DIARY_PROMPT,
             self.PROMPT_FILES[
@@ -201,6 +231,14 @@ class EditableResourceManager:
                 "世界书公共设定文件。转生卡和冒险日记生成前会扫描聊天记录、玩家行动、"
                 "当前位置和日志等文本，命中 always 或 keyword 条目后，把条目内容通过世界书"
                 "包装话术注入主任务 Prompt。这个说明文件只用于网页提示，不会发送给 AI。"
+            ),
+            "skill_book/default.json": (
+                "技能书文件。结构与世界书一致，冒险日记生成前会扫描玩家行动、当前位置和日志，"
+                "命中条目后把技能说明注入 Prompt。base_path 是给 AI 输出 update.patches 的路径提示。"
+            ),
+            "status_book/default.json": (
+                "状态书文件。结构与世界书一致，条目标题代表全部可觉醒状态。已拥有状态会命中并注入说明，"
+                "未拥有状态标题会进入待觉醒列表。base_path 是给 AI 输出 update.patches 的路径提示。"
             ),
             self.PROMPT_FILES["reincarnation_prompt"]: (
                 "用于 /异世界转生 的主任务 Prompt。它会组合触发命令、目标群友昵称或 ID、"

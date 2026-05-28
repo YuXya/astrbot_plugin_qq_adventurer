@@ -5,6 +5,7 @@ import json
 from ....domain.models.data_models import AdventureDiaryCard, TokenUsage
 from ....domain.services.adventure_diary_domain_service import AdventureDiaryDomainService
 from ....utils.logger import logger
+from ...patch_books import PatchBookEngine
 from ...world_book import WorldBookEngine
 from ..utils.json_utils import parse_json_object_response
 from ..utils.llm_utils import (
@@ -26,6 +27,7 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         super().__init__(context, config_manager, editable_manager)
         self.domain_service = domain_service
         self.world_book_engine = WorldBookEngine(editable_manager=self.editable_manager)
+        self.patch_book_engine = PatchBookEngine(editable_manager=self.editable_manager)
 
     def get_data_type(self) -> str:
         return "异世界冒险日记卡"
@@ -123,6 +125,13 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             self._format_logs_for_scan(logs),
         ]
         world_book_text = self.world_book_engine.build_prompt_text(scan_parts).prompt_text
+        patch_book_text = self._join_optional_prompt_parts(
+            [
+                world_book_text,
+                self.patch_book_engine.build_skill_prompt_text(scan_parts),
+                self.patch_book_engine.build_status_prompt_text(state),
+            ]
+        )
 
         return self.editable_manager.render_prompt(
             "adventure_diary_prompt",
@@ -133,7 +142,7 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 "state_json": self._json_dump(state),
                 "logs_text": self._format_logs(logs),
                 "action": action,
-                "world_book_text": world_book_text,
+                "world_book_text": patch_book_text,
             },
         )
 
@@ -196,3 +205,7 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             str(item.get("action") or item.get("result") or item.get("title") or "")
             for item in logs[-8:]
         )
+
+    @staticmethod
+    def _join_optional_prompt_parts(parts: list[str]) -> str:
+        return "\n\n".join(str(part).strip() for part in parts if str(part).strip())

@@ -156,7 +156,7 @@ class SaveWebViewer:
             f"""
             <h1>{self._e(title)}</h1>
             <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
-            <p class="muted">保存时会自动备份旧文件。世界书 default.json 会先做 JSON 校验。</p>
+            <p class="muted">保存时会自动备份旧文件。世界书、技能书和状态书 default.json 会先做 JSON 校验。</p>
             {self._editable_table(description, rows)}
             """,
         )
@@ -174,7 +174,7 @@ class SaveWebViewer:
         meta = self._editable_file_meta(file_id)
         label = meta.get("label", file_id) if meta else file_id
         title = f"编辑 {label}"
-        if file_id == "world_book/default.json":
+        if self._is_structured_book_file(file_id):
             return self._world_book_file_response(
                 title,
                 file_id,
@@ -252,6 +252,31 @@ class SaveWebViewer:
             )
 
         book_json = self._json_script_data(book)
+        is_patch_book = file_id in {"skill_book/default.json", "status_book/default.json"}
+        base_path_block = (
+            f"""
+              <label for="book-base-path">默认 patch 基础路径</label>
+              <input id="book-base-path" type="text" value="{self._e(book.get('base_path') or '')}" spellcheck="false">
+              <p class="muted">这个路径会发给 AI 作为 update.patches 的路径提示，不代表 JSON 文件实际存放路径。</p>
+            """
+            if is_patch_book
+            else ""
+        )
+        book_title = (
+            "技能书条目"
+            if file_id == "skill_book/default.json"
+            else "状态书条目"
+            if file_id == "status_book/default.json"
+            else "世界书条目"
+        )
+        book_hint = (
+            "每个条目会在命中后作为技能说明注入 Prompt。"
+            if file_id == "skill_book/default.json"
+            else "条目标题代表可觉醒状态；已拥有状态命中后注入说明，未拥有状态标题进入待觉醒列表。"
+            if file_id == "status_book/default.json"
+            else "每个条目会在命中后作为世界背景补充注入 Prompt。"
+        )
+        storage_key = "qq_adventurer:book:open_entries:" + file_id.replace("/", ":")
         return self._html_response(
             title,
             f"""
@@ -264,11 +289,12 @@ class SaveWebViewer:
               <input id="world-book-content" type="hidden" name="content" value="">
               <label for="note">资源说明 / 注释</label>
               <textarea id="note" class="note-editor" name="note" spellcheck="false">{self._e(note)}</textarea>
+              {base_path_block}
 
               <div class="world-book-toolbar">
                 <div>
-                  <h2>世界书条目</h2>
-                  <p class="muted">每个条目会在命中后作为世界背景补充注入 Prompt。</p>
+                  <h2>{self._e(book_title)}</h2>
+                  <p class="muted">{self._e(book_hint)}</p>
                 </div>
                 <button id="add-entry" type="button">+ 添加条目</button>
               </div>
@@ -288,7 +314,8 @@ class SaveWebViewer:
               const addEntryButton = document.getElementById("add-entry");
               const form = document.getElementById("world-book-form");
               const contentInput = document.getElementById("world-book-content");
-              const openStateStorageKey = "qq_adventurer:world_book:open_entries:default";
+              const basePathInput = document.getElementById("book-base-path");
+              const openStateStorageKey = "{self._e(storage_key)}";
               let draggingIndex = null;
               let openEntryKeys = new Set();
               let hasCapturedOpenState = false;
@@ -297,6 +324,9 @@ class SaveWebViewer:
                 ...initialWorldBook,
                 entries: Array.isArray(initialWorldBook.entries) ? initialWorldBook.entries : [],
               }};
+              if (basePathInput) {{
+                state.base_path = String(initialWorldBook.base_path || basePathInput.value || "");
+              }}
 
               function entryDefaults(index) {{
                 return {{
@@ -336,6 +366,9 @@ class SaveWebViewer:
               }}
 
               function syncFromDom() {{
+                if (basePathInput) {{
+                  state.base_path = basePathInput.value;
+                }}
                 state.entries = Array.from(entriesEl.querySelectorAll(".world-entry")).map((card, index) => normalizeEntry({{
                   id: card.querySelector("[data-field='id']").value,
                   title: card.querySelector("[data-field='title']").value,
@@ -571,6 +604,8 @@ class SaveWebViewer:
             if file_id == "world_book/default.json":
                 json.loads(content)
                 self.editable_manager.write_world_book(content)
+            elif file_id in {"skill_book/default.json", "status_book/default.json"}:
+                self.editable_manager.write_json_book(file_id, content)
             else:
                 self.editable_manager.write_text(file_id, content)
             self.editable_manager.write_note(file_id, note)
@@ -632,6 +667,8 @@ class SaveWebViewer:
             )
 
         book["version"] = book.get("version", 1)
+        if "base_path" in book:
+            book["base_path"] = str(book.get("base_path") or "")
         book["entries"] = normalized_entries
         return book
 
@@ -1145,6 +1182,14 @@ class SaveWebViewer:
     def _is_editable_file(self, file_id: str) -> bool:
         return file_id in {
             item["id"] for item in self.editable_manager.list_editable_files()
+        }
+
+    @staticmethod
+    def _is_structured_book_file(file_id: str) -> bool:
+        return file_id in {
+            "world_book/default.json",
+            "skill_book/default.json",
+            "status_book/default.json",
         }
 
     def _editable_rows(self, items: list[dict[str, str]], category: str) -> list[str]:

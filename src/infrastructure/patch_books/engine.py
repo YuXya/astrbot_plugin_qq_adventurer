@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from ..editable_resources import EditableResourceManager
+from ..world_book.models import WorldBookEntry
+
+try:
+    from ...utils.logger import logger
+except Exception:
+    logger = logging.getLogger(__name__)
+
+
+class PatchBookEngine:
+    def __init__(self, editable_manager: EditableResourceManager | None = None):
+        self.editable_manager = editable_manager or EditableResourceManager()
+
+    def build_skill_prompt_text(self, scan_parts: list[str] | None) -> str:
+        book = self._load_book(self.editable_manager.skill_book_path, "技能书")
+        entries = self._entries_from_book(book)
+        matched = self._match_entries(entries, self._join_text(scan_parts or []))
+        if not matched:
+            return ""
+
+        base_path = self._book_base_path(book, "/主角/技能/技能名/")
+        lines = [
+            "技能书补充设定：",
+            f"默认 patch 基础路径：{base_path}",
+            "命中技能说明：",
+        ]
+        lines.extend(
+            f"- {entry.title or entry.id}：{entry.content}"
+            for entry in matched
+            if entry.content
+        )
+        return "\n".join(lines)
+
+    def build_status_prompt_text(self, state: dict[str, Any]) -> str:
+        book = self._load_book(self.editable_manager.status_book_path, "状态书")
+        entries = self._entries_from_book(book)
+        enabled_entries = [entry for entry in entries if entry.enabled]
+        if not enabled_entries:
+            return ""
+
+        owned_names = self._owned_status_names(state, enabled_entries)
+        matched = self._match_entries(
+            enabled_entries,
+            self._join_text(sorted(owned_names)),
+            include_always=False,
+        )
+        pending_names = [
+            entry.title or entry.id
+            for entry in enabled_entries
+            if (entry.title or entry.id) and (entry.title or entry.id) not in owned_names
+        ]
+
+        base_path = self._book_base_path(book, "/主角/状态/状态名/")
+        lines = [
+            "状态书补充设定：",
+            f"默认 patch 基础路径：{base_path}",
+        ]
+        if matched:
+            lines.append("已拥有状态说明：")
+            lines.extend(
+                f"- {entry.title or entry.id}：{entry.content}"
+                for entry in matched
+                if entry.content
+            )
+        else:
+            lines.append("已拥有状态说明：（暂无命中。）")
+
+        lines.append("待觉醒列表：")
+        if pending_names:
+            lines.extend(f"- {name}" for name in pending_names)
+        else:
+            lines.append("（暂无待觉醒状态。）")
+        return "\n".join(lines)
+
+    def _load_book(self, path: Path, label: str) -> dict[str, Any]:
+        if not path.exists():
+            logger.warning(f"{label}文件不存在，跳过加载: {path}")
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            logger.warning(f"{label} JSON 读取失败，跳过加载: {exc}")
+            return {}
+
+    @staticmethod
+    def _entries_from_book(book: dict[str, Any]) -> list[WorldBookEntry]:
+        raw_entries = book.get("entries", []) if isinstance(book, dict) else []
+        if isinstance(raw_entries, dict):
+            iterable = raw_entries.items()
+        elif isinstance(raw_entries, list):
+            iterable = enumerate(raw_entries)
+        else:
+            return []
+
+        entries: list[WorldBookEntry] = []
+        for fallback_id, raw_entry in iterable:
+            if not isinstance(raw_entry, dict):
+                continue
+            entry = WorldBookEntry.from_dict(raw_entry, fallback_id=str(fallback_id))
+            if entry.id and (entry.title or entry.content):
+                entries.append(entry)
+        return entries
+
+    def _match_entries(
+        self,
+        entries: list[WorldBookEntry],
+        scan_text: str,
+        include_always: bool = True,
+    ) -> list[WorldBookEntry]:
+        matched: list[WorldBookEntry] = []
+        activated_ids: set[str] = set()
+        if not scan_text and not include_always:
+            return []
+
+        for entry in entries:
+            if entry.id in activated_ids or not entry.enabled:
+                continue
+            if entry.strategy == "always":
+                if include_always:
+                    matched.append(entry)
+                    activated_ids.add(entry.id)
+                continue
+            if entry.strategy != "keyword":
+                continue
+            if self._contains_any_key(scan_text, entry.keys):
+                matched.append(entry)
+                activated_ids.add(entry.id)
+
+        return sorted(matched, key=lambda item: (item.order, item.id))
+
+    @staticmethod
+    def _contains_any_key(text: str, keys: list[str]) -> bool:
+        if not text or not keys:
+            return False
+        folded_text = text.casefold()
+        return any(key in text or key.casefold() in folded_text for key in keys)
+
+    @staticmethod
+    def _owned_status_names(
+        state: dict[str, Any],
+        entries: list[WorldBookEntry],
+    ) -> set[str]:
+        names = {entry.title or entry.id for entry in entries if entry.title or entry.id}
+        owned: set[str] = set()
+
+        def visit(value: object) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    key_text = str(key)
+                    if key_text in names:
+                        owned.add(key_text)
+                    visit(child)
+            elif isinstance(value, list):
+                for item in value:
+                    if str(item) in names:
+                        owned.add(str(item))
+                    visit(item)
+
+        visit(state if isinstance(state, dict) else {})
+        return owned
+
+    @staticmethod
+    def _book_base_path(book: dict[str, Any], fallback: str) -> str:
+        base_path = str(book.get("base_path") or "").strip()
+        return base_path or fallback
+
+    @staticmethod
+    def _join_text(parts) -> str:
+        return "\n".join(str(part).strip() for part in parts if str(part).strip())
