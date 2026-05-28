@@ -65,6 +65,7 @@ class AdventureDiaryApplicationService:
                 user_id,
                 card,
                 new_level,
+                card.level_exp_after,
             )
 
             image_path, _html = await self.card_generator.generate_diary_image_card(

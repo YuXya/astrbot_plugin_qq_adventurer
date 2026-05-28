@@ -204,6 +204,41 @@
       font-size: 19px;
       line-height: 1.42;
     }
+
+    .state-overview {
+      margin-top: 22px;
+      border: 1px solid var(--line);
+      background: rgba(237, 244, 239, 0.62);
+      padding: 18px 20px;
+    }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .state-item {
+      border: 1px solid rgba(82, 121, 111, 0.28);
+      background: rgba(255, 255, 255, 0.56);
+      padding: 9px 11px;
+      min-height: 58px;
+    }
+
+    .state-key {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .state-value {
+      color: #263f37;
+      font-size: 18px;
+      font-weight: 900;
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 <body>
@@ -277,6 +312,20 @@
     </section>
 
     <footer class="footer">{{ card.footer }}</footer>
+
+    {% if state_items %}
+    <section class="state-overview">
+      <div class="section-title">当前状态</div>
+      <div class="state-grid">
+        {% for key, value in state_items %}
+        <div class="state-item">
+          <div class="state-key">{{ key }}</div>
+          <div class="state-value">{{ value }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
   </main>
 </body>
 </html>

@@ -688,6 +688,7 @@ class SaveWebViewer:
         title_name = card.get("target_name") or profile.get("nickname") or user_id
         summary = self._player_summary_html(group_id, user_id, profile, state, card)
         log_cards = self._player_log_cards(group_id, user_id, logs)
+        state_overview = self._state_overview_html(state)
 
         return self._html_response(
             f"玩家存档 - {title_name}",
@@ -716,6 +717,7 @@ class SaveWebViewer:
                 <pre>{self._e_json(state)}</pre>
               </details>
             </section>
+            {state_overview}
             <form class="danger-zone" method="post" action="/player/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
               <input type="hidden" name="group_id" value="{self._e(group_id)}">
               <input type="hidden" name="user_id" value="{self._e(user_id)}">
@@ -878,6 +880,77 @@ class SaveWebViewer:
             )
         return "\n".join(cards)
 
+    def _state_overview_html(self, state: dict[str, Any]) -> str:
+        items = self._state_display_items(state)
+        if not items:
+            return ""
+        item_html = "".join(
+            f"""
+            <div class="state-item">
+              <span>{self._e(label)}</span>
+              <strong>{self._e(value)}</strong>
+            </div>
+            """
+            for label, value in items
+        )
+        return f"""
+            <section class="detail-panel state-overview-panel">
+              <h2>完整状态</h2>
+              <p class="muted">包含当前 state 中的状态项；经验和熟练度按百分比显示。</p>
+              <div class="state-overview-grid">{item_html}</div>
+            </section>
+        """
+
+    def _state_display_items(self, state: dict[str, Any]) -> list[tuple[str, str]]:
+        if not isinstance(state, dict):
+            return []
+        hidden_keys = {"schema_version", "group_id", "user_id", "updated_at"}
+        items: list[tuple[str, str]] = []
+        for key, value in state.items():
+            if key in hidden_keys:
+                continue
+            self._append_state_item(items, str(key), value)
+        return items
+
+    def _append_state_item(
+        self,
+        items: list[tuple[str, str]],
+        label: str,
+        value: object,
+    ) -> None:
+        if isinstance(value, dict):
+            if not value:
+                items.append((self._state_label(label), "无"))
+                return
+            for child_key, child_value in value.items():
+                self._append_state_item(items, f"{label}/{child_key}", child_value)
+            return
+        if isinstance(value, list):
+            display = "、".join(str(item) for item in value[:12]) if value else "无"
+            if len(value) > 12:
+                display += f" 等 {len(value)} 项"
+            items.append((self._state_label(label), display))
+            return
+        if label.endswith("/经验") or label.endswith("/熟练度") or label == "level_exp":
+            items.append((self._state_label(label), f"{value}%"))
+            return
+        items.append((self._state_label(label), str(value)))
+
+    @staticmethod
+    def _state_label(label: str) -> str:
+        labels = {
+            "level": "等级",
+            "level_exp": "等级经验",
+            "hp": "HP",
+            "mp": "MP",
+            "gold": "金币",
+            "inventory": "物品",
+            "skills": "技能",
+            "quests": "任务",
+            "flags": "标记",
+        }
+        return labels.get(label, label)
+
     async def _player_log_delete(self, request: web.Request) -> web.Response:
         if not self._is_authorized(request):
             return self._forbidden()
@@ -1015,6 +1088,11 @@ class SaveWebViewer:
     .tag-row {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }}
     .meta-list {{ display: grid; gap: 8px; margin-top: 16px; }}
     .meta-list div {{ display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid #edf1f5; }}
+    .state-overview-panel {{ margin-top: 16px; }}
+    .state-overview-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }}
+    .state-item {{ min-height: 64px; padding: 11px 12px; border: 1px solid #dde2ea; border-radius: 8px; background: #f8fafc; }}
+    .state-item span {{ display: block; color: #68707d; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }}
+    .state-item strong {{ display: block; margin-top: 4px; color: #172033; font-size: 17px; overflow-wrap: anywhere; }}
     .section-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
     .section-head h2 {{ margin-bottom: 4px; }}
     .log-list {{ display: grid; gap: 12px; }}
@@ -1032,7 +1110,9 @@ class SaveWebViewer:
     .raw-panel pre {{ margin: 0; border-radius: 0; }}
     .empty-state {{ padding: 18px; background: #fff; border: 1px dashed #c8d0dc; border-radius: 8px; }}
     @media (max-width: 900px) {{ .world-entry-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+    @media (max-width: 900px) {{ .state-overview-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     @media (max-width: 900px) {{ .detail-grid, .raw-grid {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 560px) {{ .state-overview-grid {{ grid-template-columns: 1fr; }} }}
     @media (max-width: 720px) {{ .world-entry-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} .hero-card {{ align-items: flex-start; }} .log-card-head {{ flex-direction: column; }} }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -71,8 +72,11 @@ class AdventureDiaryCard:
     encounter: str
     result: str
     level_change: str
+    level_exp_after: int = 0
     stats: dict[str, str] = field(default_factory=dict)
     changes: list[str] = field(default_factory=list)
+    update_patches: list[dict[str, Any]] = field(default_factory=list)
+    state_snapshot: dict[str, Any] = field(default_factory=dict)
     footer: str = ""
     avatar_url: str = ""
 

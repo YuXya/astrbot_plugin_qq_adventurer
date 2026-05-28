@@ -67,6 +67,7 @@ class ReportGenerator(ICardGenerator):
             card=card,
             stats_items=list(card.stats.items()),
             changes=card.changes,
+            state_items=self._state_display_items(card.state_snapshot),
             avatar_url=card.avatar_url,
         )
         if not html_content:
@@ -133,3 +134,54 @@ class ReportGenerator(ICardGenerator):
             logger.error(f"保存图片失败: {exc}", exc_info=True)
 
         return None
+
+    def _state_display_items(self, state: dict[str, Any]) -> list[tuple[str, str]]:
+        if not isinstance(state, dict):
+            return []
+        hidden_keys = {"schema_version", "group_id", "user_id", "updated_at"}
+        items: list[tuple[str, str]] = []
+        for key, value in state.items():
+            if key in hidden_keys:
+                continue
+            self._append_state_item(items, str(key), value)
+        return items
+
+    def _append_state_item(
+        self,
+        items: list[tuple[str, str]],
+        label: str,
+        value: object,
+    ) -> None:
+        if isinstance(value, dict):
+            if not value:
+                items.append((self._state_label(label), "无"))
+                return
+            for child_key, child_value in value.items():
+                self._append_state_item(items, f"{label}/{child_key}", child_value)
+            return
+        if isinstance(value, list):
+            display = "、".join(str(item) for item in value[:6]) if value else "无"
+            if len(value) > 6:
+                display += f" 等 {len(value)} 项"
+            items.append((self._state_label(label), display))
+            return
+        suffix = "%"
+        if label.endswith("/经验") or label.endswith("/熟练度") or label == "level_exp":
+            items.append((self._state_label(label), f"{value}{suffix}"))
+            return
+        items.append((self._state_label(label), str(value)))
+
+    @staticmethod
+    def _state_label(label: str) -> str:
+        labels = {
+            "level": "等级",
+            "level_exp": "等级经验",
+            "hp": "HP",
+            "mp": "MP",
+            "gold": "金币",
+            "inventory": "物品",
+            "skills": "技能",
+            "quests": "任务",
+            "flags": "标记",
+        }
+        return labels.get(label, label)

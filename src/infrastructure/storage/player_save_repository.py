@@ -44,6 +44,7 @@ class PlayerSaveRepository:
             "user_id": str(user_id),
             "updated_at": now,
             "level": 1,
+            "level_exp": 0,
             "region": "转生大厅",
             "location": "转生大厅",
             "hp": 100,
@@ -98,6 +99,7 @@ class PlayerSaveRepository:
                 "user_id": str(user_id),
                 "updated_at": now,
                 "level": 1,
+                "level_exp": 0,
                 "region": "转生大厅",
                 "location": "转生大厅",
                 "hp": 100,
@@ -113,6 +115,9 @@ class PlayerSaveRepository:
             changed = False
             if "level" not in state:
                 state["level"] = 1
+                changed = True
+            if "level_exp" not in state:
+                state["level_exp"] = 0
                 changed = True
             if "region" not in state:
                 state["region"] = state.get("location") or "未知区域"
@@ -140,6 +145,7 @@ class PlayerSaveRepository:
         user_id: str,
         card: AdventureDiaryCard,
         new_level: int,
+        new_level_exp: int = 0,
     ) -> None:
         user_dir = self.get_user_dir(group_id, user_id)
         user_dir.mkdir(parents=True, exist_ok=True)
@@ -154,6 +160,7 @@ class PlayerSaveRepository:
                 "user_id": str(user_id),
                 "updated_at": now,
                 "level": max(1, min(int(new_level), 100)),
+                "level_exp": max(0, min(int(new_level_exp), 99)),
                 "region": card.region,
                 "location": card.location,
             }
@@ -165,6 +172,8 @@ class PlayerSaveRepository:
         state.setdefault("skills", {})
         state.setdefault("quests", [])
         state.setdefault("flags", {})
+        self._apply_state_patches(state, card.update_patches)
+        card.state_snapshot = self._to_jsonable(state)
         self._atomic_write_json(state_path, state)
 
         self.append_log(
@@ -180,8 +189,10 @@ class PlayerSaveRepository:
                 "diary": card.diary,
                 "encounter": card.encounter,
                 "level_change": card.level_change,
+                "level_exp": card.level_exp_after,
                 "result": card.result,
                 "changes": card.changes,
+                "update_patches": card.update_patches,
             },
         )
 
@@ -334,6 +345,88 @@ class PlayerSaveRepository:
             except json.JSONDecodeError:
                 continue
         return logs
+
+    def _apply_state_patches(
+        self,
+        state: dict[str, Any],
+        patches: list[dict[str, Any]],
+    ) -> None:
+        if not isinstance(patches, list):
+            return
+        for patch in patches:
+            if not isinstance(patch, dict):
+                continue
+            op = str(patch.get("op") or "").strip()
+            path = str(patch.get("path") or "").strip()
+            if not path.startswith("/") or path in {"/region", "/location"}:
+                continue
+            if path in {"/level/经验", "/等级/经验", "/主角/等级/经验"}:
+                continue
+            parts = self._split_patch_path(path)
+            if not parts:
+                continue
+            if op == "delta":
+                self._apply_delta_patch(state, parts, patch.get("value"))
+            elif op in {"replace", "insert"}:
+                self._set_nested_value(state, parts, patch.get("value"))
+
+    def _apply_delta_patch(
+        self,
+        state: dict[str, Any],
+        parts: list[str],
+        value: object,
+    ) -> None:
+        delta = self._number_value(value)
+        parent = self._ensure_nested_parent(state, parts)
+        key = parts[-1]
+        current = self._number_value(parent.get(key, 0))
+        next_value = current + delta
+        if key in {"经验", "proficiency", "熟练度"}:
+            next_value = max(0, min(next_value, 100))
+        parent[key] = next_value
+
+    def _set_nested_value(
+        self,
+        state: dict[str, Any],
+        parts: list[str],
+        value: object,
+    ) -> None:
+        parent = self._ensure_nested_parent(state, parts)
+        key = parts[-1]
+        if isinstance(parent.get(key), list) and not isinstance(value, list):
+            parent[key].append(value)
+            return
+        parent[key] = value
+
+    def _ensure_nested_parent(
+        self,
+        root: dict[str, Any],
+        parts: list[str],
+    ) -> dict[str, Any]:
+        current = root
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+            current = child
+        return current
+
+    @staticmethod
+    def _split_patch_path(path: str) -> list[str]:
+        return [
+            part.replace("~1", "/").replace("~0", "~")
+            for part in path.split("/")[1:]
+            if part
+        ]
+
+    @staticmethod
+    def _number_value(value: object) -> int | float:
+        try:
+            number = float(value or 0)
+        except Exception:
+            return 0
+        return int(number) if number.is_integer() else number
 
     @staticmethod
     def _safe_id(value: object) -> str:
