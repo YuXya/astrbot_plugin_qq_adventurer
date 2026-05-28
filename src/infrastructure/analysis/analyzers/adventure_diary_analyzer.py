@@ -148,6 +148,11 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 "appearance": self._card_text(card, "appearance", "转生后的可爱异世界外貌"),
                 "personality": self._card_text(card, "personality", "保留转生卡中的性格"),
                 "talent": self._card_text(card, "talent", "尚未觉醒的天赋"),
+                "birth_description": self._card_text(
+                    card,
+                    "birth_description",
+                    "她最初在异世界某个陌生地点醒来，周围情况还不明朗。",
+                ),
             },
         )
 

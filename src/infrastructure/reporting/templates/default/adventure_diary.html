@@ -239,6 +239,93 @@
       margin-top: 3px;
       overflow-wrap: anywhere;
     }
+
+    .progress-panel {
+      margin-top: 22px;
+      border: 1px solid var(--line);
+      background: rgba(237, 244, 239, 0.62);
+      color: var(--ink);
+      padding: 18px 20px 20px;
+    }
+
+    .progress-panel .section-title {
+      color: var(--red);
+      border-bottom: 1px solid rgba(82, 121, 111, 0.20);
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+
+    .progress-list {
+      display: grid;
+      gap: 16px;
+    }
+
+    .progress-row {
+      min-width: 0;
+    }
+
+    .progress-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .progress-name {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+      color: #263f37;
+      font-size: 22px;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+
+    .progress-name::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      border: 3px solid rgba(82, 121, 111, 0.26);
+      border-top-color: var(--green);
+      border-radius: 50%;
+    }
+
+    .progress-level {
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .progress-xp {
+      color: var(--green);
+      font-size: 18px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .progress-xp small {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 7px;
+      overflow: hidden;
+      background: rgba(82, 121, 111, 0.16);
+      border-radius: 999px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(82, 121, 111, 0.24);
+    }
   </style>
 </head>
 <body>
@@ -312,6 +399,28 @@
     </section>
 
     <footer class="footer">{{ card.footer }}</footer>
+
+    {% if progress_items %}
+    <section class="progress-panel">
+      <div class="section-title">状态进度</div>
+      <div class="progress-list">
+        {% for item in progress_items %}
+        <div class="progress-row">
+          <div class="progress-head">
+            <div class="progress-name">
+              <span>{{ item.label }}</span>
+              <span class="progress-level">Lv.{{ item.level }}</span>
+            </div>
+            <div class="progress-xp">{{ item.value }} <small>/ 100</small></div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: {{ item.percent }}%;"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
 
     {% if state_items %}
     <section class="state-overview">

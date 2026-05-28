@@ -24,6 +24,12 @@ class AdventureDomainService:
         )
         personality = self._clean_text(raw.get("personality"), "好奇、嘴硬、容易被夸奖哄开心")
         talent = self._clean_text(raw.get("talent"), "能把平平无奇的话题变成热闹的小事件")
+        birth_description = self._clean_text(
+            raw.get("birth_description"),
+            "她直接在异世界醒来，身边只有陌生的风声和一点能遮身的小行李。",
+        )
+        birth_region = self._clean_text(raw.get("birth_region"), "未知区域")
+        birth_location = self._clean_text(raw.get("birth_location"), "醒来的地方")
         quote = self._clean_text(raw.get("quote"), "哼，我才不是迷路了，只是在巡视新世界！")
         footer = self._clean_text(raw.get("footer"), "根据最近群聊发言生成，仅供娱乐。")
 
@@ -36,6 +42,9 @@ class AdventureDomainService:
             appearance=appearance[:260],
             personality=personality[:180],
             talent=talent[:120],
+            birth_description=birth_description[:180],
+            birth_region=birth_region[:32],
+            birth_location=birth_location[:48],
             stats=self._normalize_stats(raw.get("stats")),
             likes=self._normalize_likes(raw.get("likes")),
             quote=quote[:80],
@@ -65,6 +74,9 @@ class AdventureDomainService:
             )[:260],
             personality="表面一本正经，实际很容易被新鲜事吸引；喜欢吐槽，但关键时刻会认真帮大家收拾局面。",
             talent="把群里的零碎话题炼成奇妙道具，并用一句吐槽点亮全场。",
+            birth_description="她直接在薄雾森林的溪边醒来，斗篷边沾着露水，附近有苔石、小蘑菇和一条通向村落的窄路。",
+            birth_region="薄雾森林",
+            birth_location="溪边苔石旁",
             stats={"魔力": "A-", "力量": "F", "敏捷": "C", "体质": "E"},
             likes=["热闹话题", "甜点", "被认真回应"],
             quote="才、才不是特地来救你的，只是顺路而已！",

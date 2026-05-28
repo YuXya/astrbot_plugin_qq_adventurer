@@ -21,6 +21,9 @@ class ReincarnationCard:
     appearance: str
     personality: str
     talent: str
+    birth_description: str = ""
+    birth_region: str = ""
+    birth_location: str = ""
     stats: dict[str, str] = field(default_factory=dict)
     likes: list[str] = field(default_factory=list)
     quote: str = ""
@@ -40,6 +43,7 @@ class ReincarnationCard:
             f"外貌：{self.appearance}",
             f"性格：{self.personality}",
             f"天赋：{self.talent}",
+            f"初醒之地：{self.birth_description}",
         ]
         if stats_text:
             parts.append(f"能力值：{stats_text}")

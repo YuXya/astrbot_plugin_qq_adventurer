@@ -12,6 +12,7 @@ from astrbot.api.star import StarTools
 
 from ...domain.models.data_models import AdventureDiaryCard, ReincarnationCard
 from ...utils.logger import logger
+from .state_progress import PROGRESS_KEYS
 
 
 class PlayerSaveRepository:
@@ -45,8 +46,8 @@ class PlayerSaveRepository:
             "updated_at": now,
             "level": 1,
             "level_exp": 0,
-            "region": "转生大厅",
-            "location": "转生大厅",
+            "region": card.birth_region or "未知区域",
+            "location": card.birth_location or "醒来的地方",
             "hp": 100,
             "mp": 100,
             "gold": 0,
@@ -381,8 +382,9 @@ class PlayerSaveRepository:
         key = parts[-1]
         current = self._number_value(parent.get(key, 0))
         next_value = current + delta
-        if key in {"经验", "proficiency", "熟练度"}:
-            next_value = max(0, min(next_value, 100))
+        if key in PROGRESS_KEYS:
+            self._ensure_progress_level(parent)
+            next_value = self._normalize_progress_value(parent, next_value)
         parent[key] = next_value
 
     def _set_nested_value(
@@ -397,6 +399,31 @@ class PlayerSaveRepository:
             parent[key].append(value)
             return
         parent[key] = value
+        if key in PROGRESS_KEYS:
+            self._ensure_progress_level(parent)
+            parent[key] = self._normalize_progress_value(parent, self._number_value(value))
+
+    @staticmethod
+    def _ensure_progress_level(parent: dict[str, Any]) -> None:
+        for level_key in ("等级", "level", "Lv", "lv"):
+            if level_key in parent:
+                try:
+                    parent[level_key] = max(1, int(float(parent.get(level_key) or 1)))
+                except Exception:
+                    parent[level_key] = 1
+                if level_key != "等级":
+                    parent["等级"] = parent[level_key]
+                    parent.pop(level_key, None)
+                return
+        parent["等级"] = 1
+
+    @staticmethod
+    def _normalize_progress_value(parent: dict[str, Any], value: int | float) -> int | float:
+        next_value = max(0, value)
+        while next_value >= 100:
+            parent["等级"] = max(1, int(PlayerSaveRepository._number_value(parent.get("等级", 1)))) + 1
+            next_value -= 100
+        return max(0, min(next_value, 99))
 
     def _ensure_nested_parent(
         self,

@@ -9,6 +9,7 @@ from urllib.parse import quote
 from aiohttp import web
 
 from ...utils.logger import logger
+from ..storage.state_progress import build_progress_items, build_state_display_items
 
 
 class SaveWebViewer:
@@ -688,6 +689,7 @@ class SaveWebViewer:
         title_name = card.get("target_name") or profile.get("nickname") or user_id
         summary = self._player_summary_html(group_id, user_id, profile, state, card)
         log_cards = self._player_log_cards(group_id, user_id, logs)
+        progress_overview = self._progress_overview_html(state)
         state_overview = self._state_overview_html(state)
 
         return self._html_response(
@@ -698,6 +700,7 @@ class SaveWebViewer:
               <a class="button-link secondary-link" href="/?token={self._e(self.token)}">返回列表</a>
             </p>
             {summary}
+            {progress_overview}
             <section class="detail-panel">
               <div class="section-head">
                 <div>
@@ -776,6 +779,7 @@ class SaveWebViewer:
                 {self._profile_field("外貌", card.get("appearance"))}
                 {self._profile_field("性格", card.get("personality"))}
                 {self._profile_field("天赋", card.get("talent"))}
+                {self._profile_field("初醒之地", card.get("birth_description"))}
                 {self._profile_field("台词", card.get("quote"))}
               </article>
               <article class="detail-panel">
@@ -880,8 +884,41 @@ class SaveWebViewer:
             )
         return "\n".join(cards)
 
+    def _progress_overview_html(self, state: dict[str, Any]) -> str:
+        items = build_progress_items(state, limit=16)
+        if not items:
+            return """
+            <section class="detail-panel progress-overview-panel">
+              <h2>状态进度</h2>
+              <p class="muted empty-state">暂无可展示的经验进度。</p>
+            </section>
+            """
+        rows = "".join(
+            f"""
+            <div class="progress-row">
+              <div class="progress-head">
+                <div class="progress-name">
+                  <span>{self._e(item.label)}</span>
+                  <span class="progress-level">Lv.{self._e(item.level)}</span>
+                </div>
+                <div class="progress-xp">{self._e(item.value)} <small>/ 100</small></div>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" style="width: {self._e(item.percent)}%;"></div>
+              </div>
+            </div>
+            """
+            for item in items
+        )
+        return f"""
+            <section class="detail-panel progress-overview-panel">
+              <h2>状态进度</h2>
+              <div class="progress-list">{rows}</div>
+            </section>
+        """
+
     def _state_overview_html(self, state: dict[str, Any]) -> str:
-        items = self._state_display_items(state)
+        items = build_state_display_items(state, limit=40)
         if not items:
             return ""
         item_html = "".join(
@@ -896,60 +933,10 @@ class SaveWebViewer:
         return f"""
             <section class="detail-panel state-overview-panel">
               <h2>完整状态</h2>
-              <p class="muted">包含当前 state 中的状态项；经验和熟练度按百分比显示。</p>
+              <p class="muted">包含当前 state 中除经验进度外的状态项；原始 JSON 可在上方展开查看。</p>
               <div class="state-overview-grid">{item_html}</div>
             </section>
         """
-
-    def _state_display_items(self, state: dict[str, Any]) -> list[tuple[str, str]]:
-        if not isinstance(state, dict):
-            return []
-        hidden_keys = {"schema_version", "group_id", "user_id", "updated_at"}
-        items: list[tuple[str, str]] = []
-        for key, value in state.items():
-            if key in hidden_keys:
-                continue
-            self._append_state_item(items, str(key), value)
-        return items
-
-    def _append_state_item(
-        self,
-        items: list[tuple[str, str]],
-        label: str,
-        value: object,
-    ) -> None:
-        if isinstance(value, dict):
-            if not value:
-                items.append((self._state_label(label), "无"))
-                return
-            for child_key, child_value in value.items():
-                self._append_state_item(items, f"{label}/{child_key}", child_value)
-            return
-        if isinstance(value, list):
-            display = "、".join(str(item) for item in value[:12]) if value else "无"
-            if len(value) > 12:
-                display += f" 等 {len(value)} 项"
-            items.append((self._state_label(label), display))
-            return
-        if label.endswith("/经验") or label.endswith("/熟练度") or label == "level_exp":
-            items.append((self._state_label(label), f"{value}%"))
-            return
-        items.append((self._state_label(label), str(value)))
-
-    @staticmethod
-    def _state_label(label: str) -> str:
-        labels = {
-            "level": "等级",
-            "level_exp": "等级经验",
-            "hp": "HP",
-            "mp": "MP",
-            "gold": "金币",
-            "inventory": "物品",
-            "skills": "技能",
-            "quests": "任务",
-            "flags": "标记",
-        }
-        return labels.get(label, label)
 
     async def _player_log_delete(self, request: web.Request) -> web.Response:
         if not self._is_authorized(request):
@@ -1093,6 +1080,18 @@ class SaveWebViewer:
     .state-item {{ min-height: 64px; padding: 11px 12px; border: 1px solid #dde2ea; border-radius: 8px; background: #f8fafc; }}
     .state-item span {{ display: block; color: #68707d; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }}
     .state-item strong {{ display: block; margin-top: 4px; color: #172033; font-size: 17px; overflow-wrap: anywhere; }}
+    .progress-overview-panel {{ margin: 16px 0; }}
+    .progress-overview-panel h2 {{ color: #172033; }}
+    .progress-list {{ display: grid; gap: 15px; }}
+    .progress-row {{ min-width: 0; }}
+    .progress-head {{ display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: baseline; margin-bottom: 7px; }}
+    .progress-name {{ display: flex; align-items: baseline; gap: 9px; min-width: 0; color: #172033; font-size: 18px; font-weight: 900; overflow-wrap: anywhere; }}
+    .progress-name::before {{ content: ""; width: 16px; height: 16px; flex: 0 0 auto; border: 3px solid #c8d0dc; border-top-color: #1f6feb; border-radius: 50%; }}
+    .progress-level {{ color: #68707d; font-size: 12px; font-weight: 800; white-space: nowrap; }}
+    .progress-xp {{ color: #1f6feb; font-size: 15px; font-weight: 900; white-space: nowrap; }}
+    .progress-xp small {{ color: #68707d; font-size: 12px; }}
+    .progress-track {{ width: 100%; height: 7px; overflow: hidden; background: #e7edf5; border-radius: 999px; }}
+    .progress-fill {{ height: 100%; border-radius: inherit; background: #1f6feb; box-shadow: 0 0 8px rgba(31, 111, 235, 0.22); }}
     .section-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
     .section-head h2 {{ margin-bottom: 4px; }}
     .log-list {{ display: grid; gap: 12px; }}

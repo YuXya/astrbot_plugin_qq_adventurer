@@ -212,7 +212,7 @@ class EditableResourceManager:
             ),
             self.PROMPT_FILES["adventure_diary_system_prompt"]: (
                 "只用于 /异世界冒险 的 system_prompt。它由玩家转生人物卡中的名称、种族、职阶、"
-                "外貌、性格和天赋渲染，要求 AI 以该角色第一人称写冒险日记，不继承 AstrBot 全局人格。"
+                "外貌、性格、天赋和初醒之地渲染，要求 AI 以该角色第一人称写冒险日记，不继承 AstrBot 全局人格。"
             ),
             self.PROMPT_FILES["persona_reinforcement"]: (
                 "只用于 /异世界转生 流程。系统人格确定后，会先作为 llm_generate 的 system_prompt 发送，"
