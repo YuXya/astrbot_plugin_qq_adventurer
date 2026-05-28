@@ -44,14 +44,14 @@ data/plugin_data/astrbot_plugin_qq_adventurer/saves/groups/{group_id}/users/{use
 其中包含：
 
 - `profile.json`：转生人物卡、头像、昵称。
-- `state.json`：当前地点、HP、MP、金币、背包、任务等冒险状态。
+- `state.json`：当前区域、具体地点、HP、MP、金币、背包、技能、任务等冒险状态。
 - `adventure_log.jsonl`：从转生开始后的冒险记录。
 
 同一个群同一个 QQ 号的请求会串行排队处理，避免多条消息同时写坏同一份存档；不同玩家可以并行处理。
 
 ## 冒险日记
 
-冒险日记卡要求 LLM 只返回 JSON，并渲染为独立的日记卡模板。第一版只处理等级：
+冒险日记卡要求 LLM 只返回 JSON，并渲染为独立的日记卡模板。当前只实际处理等级、区域和地点；`update.patches` 是为后续状态系统预留的结构：
 
 ```json
 {
@@ -60,18 +60,27 @@ data/plugin_data/astrbot_plugin_qq_adventurer/saves/groups/{group_id}/users/{use
   "target_name": "群友名称",
   "action": "我要到森林里冒险",
   "date_label": "第 1 次冒险",
-  "location": "低语森林",
+  "region": "低语森林",
+  "location": "溪边临时营地",
   "diary": "完整日记正文",
   "encounter": "遭遇内容",
   "result": "事件结算",
   "level_change": "Lv.1->Lv.5",
   "stats": {"魔力": "A", "力量": "F", "敏捷": "C", "体质": "E"},
-  "rewards": ["奖励1", "奖励2"],
-  "footer": "底部说明"
+  "changes": ["获得物品：小浆果", "采集熟练度 +10%"],
+  "footer": "底部说明",
+  "update": {
+    "analysis": "本次在森林中行动并练习采集。",
+    "patches": [
+      { "op": "replace", "path": "/region", "value": "低语森林" },
+      { "op": "replace", "path": "/location", "value": "溪边临时营地" },
+      { "op": "delta", "path": "/skills/采集/proficiency", "value": 10 }
+    ]
+  }
 }
 ```
 
-代码会把等级限制在 `1..100`，并把冒险结果追加到 `adventure_log.jsonl`。
+代码会把等级限制在 `1..100`，并把冒险结果追加到 `adventure_log.jsonl`。技能熟练度 patch 暂时只要求 LLM 输出，不会自动应用。
 
 ## 头像与外貌
 

@@ -27,6 +27,10 @@ class AdventureDiaryDomainService:
             card_data.get("target_name") or profile.get("nickname") or "神秘冒险者",
         )
         action = self._clean_text(raw.get("action"), action_text or "自由冒险")
+        region = self._clean_text(
+            raw.get("region"),
+            state.get("region") or "未知区域",
+        )
         location = self._clean_text(
             raw.get("location"),
             state.get("location") or "未知旅途",
@@ -38,13 +42,14 @@ class AdventureDiaryDomainService:
             target_name=target_name[:32],
             action=action[:120],
             date_label=self._clean_text(raw.get("date_label"), "第 1 次冒险")[:32],
+            region=region[:48],
             location=location[:48],
             diary=self._clean_text(raw.get("diary"), "今天的冒险平稳结束，旅途留下了新的脚印。"),
             encounter=self._clean_text(raw.get("encounter"), "遇到了一些值得记录的小事件。")[:220],
             result=self._clean_text(raw.get("result"), "安全归来，并整理了新的见闻。")[:220],
             level_change=level_change,
             stats=self.normalize_stats(raw.get("stats"), card_data.get("stats")),
-            rewards=self.normalize_rewards(raw.get("rewards")),
+            changes=self.normalize_changes(raw.get("changes", raw.get("rewards"))),
             footer=self._clean_text(raw.get("footer"), "冒险记录已写入存档。")[:120],
             avatar_url=str(card_data.get("avatar_url") or "").strip(),
         )
@@ -89,11 +94,11 @@ class AdventureDiaryDomainService:
         return result
 
     @staticmethod
-    def normalize_rewards(raw_rewards: object) -> list[str]:
-        if not isinstance(raw_rewards, list):
+    def normalize_changes(raw_changes: object) -> list[str]:
+        if not isinstance(raw_changes, list):
             return ["见闻"]
-        rewards = [str(item).strip()[:24] for item in raw_rewards if str(item).strip()]
-        return rewards[:5] or ["见闻"]
+        changes = [str(item).strip()[:32] for item in raw_changes if str(item).strip()]
+        return changes[:6] or ["见闻"]
 
     @staticmethod
     def _clean_text(value: object, default: object) -> str:

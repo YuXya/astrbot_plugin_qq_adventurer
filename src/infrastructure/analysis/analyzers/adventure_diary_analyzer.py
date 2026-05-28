@@ -118,6 +118,7 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             "/异世界冒险",
             "异世界冒险",
             action,
+            str(state.get("region", "")),
             str(state.get("location", "")),
             self._format_logs_for_scan(logs),
         ]
@@ -171,9 +172,12 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             action = item.get("action", "")
             result = item.get("result", "")
             level = item.get("level_change", "")
+            region = item.get("region", "")
             line = f"{index}. {title}"
             if action:
                 line += f"；行动：{action}"
+            if region:
+                line += f"；区域：{region}"
             if result:
                 line += f"；结果：{result}"
             if level:

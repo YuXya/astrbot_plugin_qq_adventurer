@@ -44,11 +44,13 @@ class PlayerSaveRepository:
             "user_id": str(user_id),
             "updated_at": now,
             "level": 1,
+            "region": "转生大厅",
             "location": "转生大厅",
             "hp": 100,
             "mp": 100,
             "gold": 0,
             "inventory": [],
+            "skills": {},
             "quests": [],
             "flags": {},
         }
@@ -96,18 +98,30 @@ class PlayerSaveRepository:
                 "user_id": str(user_id),
                 "updated_at": now,
                 "level": 1,
+                "region": "转生大厅",
                 "location": "转生大厅",
                 "hp": 100,
                 "mp": 100,
                 "gold": 0,
                 "inventory": [],
+                "skills": {},
                 "quests": [],
                 "flags": {},
             }
             self._atomic_write_json(state_path, state)
-        elif "level" not in state:
-            state["level"] = 1
-            self._atomic_write_json(state_path, state)
+        else:
+            changed = False
+            if "level" not in state:
+                state["level"] = 1
+                changed = True
+            if "region" not in state:
+                state["region"] = state.get("location") or "未知区域"
+                changed = True
+            if "skills" not in state or not isinstance(state.get("skills"), dict):
+                state["skills"] = {}
+                changed = True
+            if changed:
+                self._atomic_write_json(state_path, state)
 
         return {
             "group_id": self._safe_id(group_id),
@@ -140,6 +154,7 @@ class PlayerSaveRepository:
                 "user_id": str(user_id),
                 "updated_at": now,
                 "level": max(1, min(int(new_level), 100)),
+                "region": card.region,
                 "location": card.location,
             }
         )
@@ -147,6 +162,7 @@ class PlayerSaveRepository:
         state.setdefault("mp", 100)
         state.setdefault("gold", 0)
         state.setdefault("inventory", [])
+        state.setdefault("skills", {})
         state.setdefault("quests", [])
         state.setdefault("flags", {})
         self._atomic_write_json(state_path, state)
@@ -159,12 +175,13 @@ class PlayerSaveRepository:
                 "created_at": now,
                 "title": card.title,
                 "action": card.action,
+                "region": card.region,
                 "location": card.location,
                 "diary": card.diary,
                 "encounter": card.encounter,
                 "level_change": card.level_change,
                 "result": card.result,
-                "rewards": card.rewards,
+                "changes": card.changes,
             },
         )
 
@@ -204,6 +221,7 @@ class PlayerSaveRepository:
                         "race": profile.get("card", {}).get("race", ""),
                         "class_name": profile.get("card", {}).get("class_name", ""),
                         "level": state.get("level", 1),
+                        "region": state.get("region", ""),
                         "location": state.get("location", ""),
                         "updated_at": max(
                             int(profile.get("updated_at", 0) or 0),

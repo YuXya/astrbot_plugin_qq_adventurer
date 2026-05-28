@@ -80,6 +80,7 @@ class SaveWebViewer:
             race = self._e(item.get("race", ""))
             class_name = self._e(item.get("class_name", ""))
             level = self._e(f"Lv.{item.get('level', 1)}")
+            region = self._e(item.get("region", ""))
             location = self._e(item.get("location", ""))
             updated_at = self._format_time(item.get("updated_at"))
             href = f"/player?group_id={group_id}&user_id={user_id}&token={self._e(self.token)}"
@@ -99,13 +100,14 @@ class SaveWebViewer:
                 f"<td>{race}</td>"
                 f"<td>{class_name}</td>"
                 f"<td>{level}</td>"
+                f"<td>{region}</td>"
                 f"<td>{location}</td>"
                 f"<td>{updated_at}</td>"
                 f"<td>{delete_form}</td>"
                 "</tr>"
             )
 
-        body = "\n".join(rows) or "<tr><td colspan=\"9\">还没有任何玩家存档。</td></tr>"
+        body = "\n".join(rows) or "<tr><td colspan=\"10\">还没有任何玩家存档。</td></tr>"
         return self._html_response(
             "异世界存档",
             f"""
@@ -119,7 +121,7 @@ class SaveWebViewer:
               <thead>
                 <tr>
                   <th>群</th><th>用户</th><th>角色</th>
-                  <th>种族</th><th>职阶</th><th>等级</th><th>地点</th><th>更新时间</th><th>操作</th>
+                  <th>种族</th><th>职阶</th><th>等级</th><th>区域</th><th>地点</th><th>更新时间</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>{body}</tbody>
@@ -761,6 +763,7 @@ class SaveWebViewer:
                   <span>Lv.{self._e(state.get("level", 1))}</span>
                   <span>{self._e(card.get("race") or "未知种族")}</span>
                   <span>{self._e(card.get("class_name") or "未知职阶")}</span>
+                  <span>{self._e(state.get("region") or "未知区域")}</span>
                   <span>{self._e(state.get("location") or "未知地点")}</span>
                 </div>
               </div>
@@ -812,14 +815,18 @@ class SaveWebViewer:
             log_type = self._e(raw_log_type)
             title = self._e(log.get("title") or log.get("message") or "冒险记录")
             action = self._e(log.get("action") or "")
+            region = self._e(log.get("region") or "")
             location = self._e(log.get("location") or "")
             level_change = self._e(log.get("level_change") or "")
             diary = self._e(log.get("diary") or "")
             encounter = self._e(log.get("encounter") or "")
             result = self._e(log.get("result") or log.get("message") or "")
-            rewards = log.get("rewards") if isinstance(log.get("rewards"), list) else []
-            reward_html = "".join(f"<span class=\"tag\">{self._e(item)}</span>" for item in rewards)
+            changes = log.get("changes")
+            if not isinstance(changes, list):
+                changes = log.get("rewards") if isinstance(log.get("rewards"), list) else []
+            change_html = "".join(f"<span class=\"tag\">{self._e(item)}</span>" for item in changes)
             created_at = self._format_time(log.get("created_at"))
+            region_html = f"<span>{region}</span>" if region else ""
             location_html = f"<span>{location}</span>" if location else ""
             level_html = f"<span>{level_change}</span>" if level_change else ""
             action_html = f"<p class=\"log-action\">{action}</p>" if action else ""
@@ -829,9 +836,9 @@ class SaveWebViewer:
                 if encounter
                 else ""
             )
-            rewards_block = (
-                f"<div class=\"tag-row\">{reward_html}</div>"
-                if reward_html
+            changes_block = (
+                f"<div class=\"tag-row\">{change_html}</div>"
+                if change_html
                 else ""
             )
             delete_button = ""
@@ -857,6 +864,7 @@ class SaveWebViewer:
                   <div class="log-meta">
                     <span>{self._e(created_at)}</span>
                     <span>{log_type}</span>
+                    {region_html}
                     {location_html}
                     {level_html}
                   </div>
@@ -864,7 +872,7 @@ class SaveWebViewer:
                   {diary_html}
                   {encounter_html}
                   <p class="log-result">{result}</p>
-                  {rewards_block}
+                  {changes_block}
                 </article>
                 """
             )

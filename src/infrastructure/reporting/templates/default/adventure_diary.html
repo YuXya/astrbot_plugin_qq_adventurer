@@ -100,7 +100,7 @@
 
     .meta {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr;
+      grid-template-columns: 1.15fr 1fr 1fr 1fr;
       gap: 12px;
       margin-top: 24px;
     }
@@ -180,14 +180,14 @@
       margin-top: 4px;
     }
 
-    .rewards {
+    .changes {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       margin-top: 18px;
     }
 
-    .reward {
+    .change {
       border: 1px solid rgba(191, 143, 60, 0.44);
       background: rgba(255, 246, 220, 0.76);
       color: #765d28;
@@ -229,6 +229,10 @@
         <div class="value">{{ card.target_name }}</div>
       </div>
       <div class="box">
+        <div class="label">区域</div>
+        <div class="value">{{ card.region }}</div>
+      </div>
+      <div class="box">
         <div class="label">地点</div>
         <div class="value">{{ card.location }}</div>
       </div>
@@ -256,9 +260,9 @@
     <section class="section">
       <div class="section-title">结算</div>
       <div class="text">{{ card.result }}</div>
-      <div class="rewards">
-        {% for reward in rewards %}
-        <div class="reward">{{ reward }}</div>
+      <div class="changes">
+        {% for change in changes %}
+        <div class="change">{{ change }}</div>
         {% endfor %}
       </div>
     </section>

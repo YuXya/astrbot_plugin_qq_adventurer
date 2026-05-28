@@ -65,13 +65,14 @@ class AdventureDiaryCard:
     target_name: str
     action: str
     date_label: str
+    region: str
     location: str
     diary: str
     encounter: str
     result: str
     level_change: str
     stats: dict[str, str] = field(default_factory=dict)
-    rewards: list[str] = field(default_factory=list)
+    changes: list[str] = field(default_factory=list)
     footer: str = ""
     avatar_url: str = ""
 
@@ -79,20 +80,19 @@ class AdventureDiaryCard:
         stats_text = " / ".join(
             f"{key}: {value}" for key, value in self.stats.items() if value
         )
-        rewards_text = "、".join(self.rewards)
         parts = [
             f"{self.title} - {self.subtitle}".strip(" -"),
             f"冒险者：{self.target_name}",
             f"行动：{self.action}",
-            f"地点：{self.location} / {self.level_change}",
+            f"区域：{self.region} / 地点：{self.location} / {self.level_change}",
             f"日记：{self.diary}",
             f"遭遇：{self.encounter}",
             f"结算：{self.result}",
         ]
         if stats_text:
             parts.append(f"基础四维：{stats_text}")
-        if rewards_text:
-            parts.append(f"收获：{rewards_text}")
+        if self.changes:
+            parts.append(f"变化：{'、'.join(self.changes)}")
         if self.footer:
             parts.append(self.footer)
         return "\n".join(part for part in parts if part)

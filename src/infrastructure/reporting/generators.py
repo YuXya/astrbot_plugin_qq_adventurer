@@ -66,7 +66,7 @@ class ReportGenerator(ICardGenerator):
             "adventure_diary.html",
             card=card,
             stats_items=list(card.stats.items()),
-            rewards=card.rewards,
+            changes=card.changes,
             avatar_url=card.avatar_url,
         )
         if not html_content:
