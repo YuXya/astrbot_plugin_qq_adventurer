@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 
 from astrbot.api import AstrBotConfig
@@ -96,6 +97,23 @@ class QQAdventurer(Star):
             host=self.config_manager.get_web_host(),
             port=self.config_manager.get_web_port(),
         )
+        self._schedule_web_viewer_start()
+
+    def _schedule_web_viewer_start(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._start_web_viewer())
+
+    async def initialize(self) -> None:
+        await self._start_web_viewer()
+
+    async def _start_web_viewer(self) -> None:
+        try:
+            await self.web_viewer.start()
+        except Exception as exc:
+            logger.warning(f"异世界存档网页自动启动失败: {exc}")
 
     @filter.command("异世界转生", alias={"reincarnate"})
     async def reincarnate(
@@ -267,25 +285,25 @@ class QQAdventurer(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("开启异世界网页")
     async def start_adventurer_web(self, event: AstrMessageEvent) -> AsyncGenerator:
-        token = await self.web_viewer.start()
-        url = self._build_web_url(token)
-        yield event.plain_result(f"异世界存档网页已开启：{url}\n临时令牌：{token}")
+        await self.web_viewer.start()
+        url = self._build_web_url()
+        yield event.plain_result(f"异世界存档网页已开启：{url}\n打开后请输入 QQ 号登录。")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("关闭异世界网页")
     async def stop_adventurer_web(self, event: AstrMessageEvent) -> AsyncGenerator:
         await self.web_viewer.stop()
-        yield event.plain_result("异世界存档网页已关闭，临时令牌已失效。")
+        yield event.plain_result("异世界存档网页已关闭，当前网页登录态已失效。")
 
     async def terminate(self) -> None:
         await self.web_viewer.stop()
 
-    def _build_web_url(self, token: str) -> str:
+    def _build_web_url(self) -> str:
         base_url = self.config_manager.get_web_public_base_url()
         if not base_url:
             port = self.config_manager.get_web_port()
             base_url = f"http://127.0.0.1:{port}"
-        return f"{base_url.rstrip('/')}?token={token}"
+        return base_url.rstrip("/")
 
     def _get_group_id_from_event(self, event: AstrMessageEvent) -> str | None:
         try:

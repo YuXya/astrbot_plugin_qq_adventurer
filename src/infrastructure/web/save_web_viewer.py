@@ -12,6 +12,10 @@ from ...utils.logger import logger
 from ..storage.state_progress import build_progress_items, build_state_display_items
 
 
+ADMIN_LOGIN_CODE = "优夏酱世界第一可爱"
+SESSION_COOKIE_NAME = "qq_adventurer_session"
+
+
 class SaveWebViewer:
     def __init__(
         self,
@@ -38,6 +42,9 @@ class SaveWebViewer:
 
         self.token = secrets.token_urlsafe(24)
         app = web.Application()
+        app.router.add_get("/login", self._login_page)
+        app.router.add_post("/login", self._login)
+        app.router.add_post("/logout", self._logout)
         app.router.add_get("/", self._index)
         app.router.add_get("/player", self._player_detail)
         app.router.add_post("/player/delete", self._player_delete)
@@ -63,6 +70,54 @@ class SaveWebViewer:
         self.token = ""
         logger.info("异世界存档网页已关闭")
 
+    async def _login_page(self, request: web.Request) -> web.Response:
+        if self._is_authorized(request):
+            raise web.HTTPFound("/")
+        return self._login_response()
+
+    async def _login(self, request: web.Request) -> web.Response:
+        data = await request.post()
+        qq_id = str(data.get("qq_id", "")).strip()
+        if qq_id != ADMIN_LOGIN_CODE:
+            return self._login_response("登录失败，请检查输入。", status=401)
+
+        response = web.HTTPFound("/")
+        response.set_cookie(
+            SESSION_COOKIE_NAME,
+            self.token,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
+        raise response
+
+    async def _logout(self, request: web.Request) -> web.Response:
+        response = web.HTTPFound("/login")
+        response.del_cookie(SESSION_COOKIE_NAME, path="/")
+        raise response
+
+    def _login_response(self, error: str = "", status: int = 200) -> web.Response:
+        error_html = f"<p class=\"error\">{self._e(error)}</p>" if error else ""
+        return self._html_response(
+            "异世界登录",
+            f"""
+            <section class="login-panel">
+              <h1>异世界网页登录</h1>
+              <p class="muted">请输入 QQ 号登录。</p>
+              {error_html}
+              <form method="post" action="/login">
+                <label for="qq-id">QQ号</label>
+                <input id="qq-id" name="qq_id" type="text" autocomplete="username" autofocus>
+                <div class="actions">
+                  <button type="submit">登录</button>
+                </div>
+              </form>
+            </section>
+            """,
+            status=status,
+            show_logout=False,
+        )
+
     async def _health(self, request: web.Request) -> web.Response:
         if not self._is_authorized(request):
             return self._forbidden()
@@ -84,9 +139,9 @@ class SaveWebViewer:
             region = self._e(item.get("region", ""))
             location = self._e(item.get("location", ""))
             updated_at = self._format_time(item.get("updated_at"))
-            href = f"/player?group_id={group_id}&user_id={user_id}&token={self._e(self.token)}"
+            href = f"/player?group_id={group_id}&user_id={user_id}"
             delete_form = (
-                f"<form class=\"inline-form\" method=\"post\" action=\"/player/delete?token={self._e(self.token)}\" "
+                "<form class=\"inline-form\" method=\"post\" action=\"/player/delete\" "
                 "onsubmit=\"return confirm('确定删除这个玩家存档？此操作不可恢复。');\">"
                 f"<input type=\"hidden\" name=\"group_id\" value=\"{group_id}\">"
                 f"<input type=\"hidden\" name=\"user_id\" value=\"{user_id}\">"
@@ -113,10 +168,10 @@ class SaveWebViewer:
             "异世界存档",
             f"""
             <h1>异世界存档</h1>
-            <p class="muted">只读查看页。关闭网页命令会立即使当前令牌失效。</p>
+            <p class="muted">管理员页面。关闭网页命令会立即使当前网页登录态失效。</p>
             <p class="nav-actions">
-              <a class="button-link" href="/editable?category=world_background&token={self._e(self.token)}">编辑世界背景</a>
-              <a class="button-link" href="/editable?category=text_completion&token={self._e(self.token)}">编辑文本补全</a>
+              <a class="button-link" href="/editable?category=world_background">编辑世界背景</a>
+              <a class="button-link" href="/editable?category=text_completion">编辑文本补全</a>
             </p>
             <table>
               <thead>
@@ -155,7 +210,7 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/?token={self._e(self.token)}">返回存档列表</a></p>
+            <p><a href="/">返回存档列表</a></p>
             <p class="muted">保存时会自动备份旧文件。世界书、技能书和状态书 default.json 会先做 JSON 校验。</p>
             {self._editable_table(description, rows)}
             """,
@@ -209,10 +264,10 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?category={self._e(back_category)}&token={self._e(self.token)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p><a href="/editable?category={self._e(back_category)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
             {warning_html}
-            <form method="post" action="/editable/save?token={self._e(self.token)}">
+            <form method="post" action="/editable/save">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <label for="note">资源说明 / 注释</label>
@@ -223,7 +278,7 @@ class SaveWebViewer:
                 <button type="submit">保存</button>
               </div>
             </form>
-            <form method="post" action="/editable/reset?token={self._e(self.token)}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+            <form method="post" action="/editable/reset" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
@@ -281,9 +336,9 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?category={self._e(back_category)}&token={self._e(self.token)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p><a href="/editable?category={self._e(back_category)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
-            <form id="world-book-form" method="post" action="/editable/save?token={self._e(self.token)}">
+            <form id="world-book-form" method="post" action="/editable/save">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <input id="world-book-content" type="hidden" name="content" value="">
@@ -303,7 +358,7 @@ class SaveWebViewer:
                 <button type="submit">保存</button>
               </div>
             </form>
-            <form method="post" action="/editable/reset?token={self._e(self.token)}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+            <form method="post" action="/editable/reset" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
@@ -615,13 +670,13 @@ class SaveWebViewer:
                 f"""
                 <h1>保存失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}">返回编辑</a></p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}"
+            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
         )
 
     @staticmethod
@@ -700,13 +755,13 @@ class SaveWebViewer:
                 f"""
                 <h1>恢复默认失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}">返回编辑</a></p>
+                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}&token={self._e(self.token)}"
+            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
         )
 
     async def _player_detail(self, request: web.Request) -> web.Response:
@@ -734,7 +789,7 @@ class SaveWebViewer:
             f"""
             <h1>{self._e(title_name)}</h1>
             <p class="nav-actions">
-              <a class="button-link secondary-link" href="/?token={self._e(self.token)}">返回列表</a>
+              <a class="button-link secondary-link" href="/">返回列表</a>
             </p>
             {summary}
             {progress_overview}
@@ -758,7 +813,7 @@ class SaveWebViewer:
               </details>
             </section>
             {state_overview}
-            <form class="danger-zone" method="post" action="/player/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
+            <form class="danger-zone" method="post" action="/player/delete" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
               <input type="hidden" name="group_id" value="{self._e(group_id)}">
               <input type="hidden" name="user_id" value="{self._e(user_id)}">
               <strong>危险操作</strong>
@@ -887,7 +942,7 @@ class SaveWebViewer:
             delete_button = ""
             if log_index >= 0 and raw_log_type == "adventure_diary":
                 delete_button = f"""
-                  <form class="inline-form" method="post" action="/player/log/delete?token={self._e(self.token)}" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
+                  <form class="inline-form" method="post" action="/player/log/delete" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
                     <input type="hidden" name="group_id" value="{self._e(group_id)}">
                     <input type="hidden" name="user_id" value="{self._e(user_id)}">
                     <input type="hidden" name="log_index" value="{log_index}">
@@ -991,7 +1046,7 @@ class SaveWebViewer:
 
         self.repository.delete_adventure_log(group_id, user_id, log_index)
         raise web.HTTPFound(
-            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}&token={self._e(self.token)}"
+            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}"
         )
 
     async def _player_delete(self, request: web.Request) -> web.Response:
@@ -1005,28 +1060,35 @@ class SaveWebViewer:
             raise web.HTTPBadRequest(text="missing group_id or user_id")
 
         self.repository.delete_player_save(group_id, user_id)
-        raise web.HTTPFound(f"/?token={self._e(self.token)}")
+        raise web.HTTPFound("/")
 
     def _is_authorized(self, request: web.Request) -> bool:
-        query_token = request.query.get("token", "")
-        auth = request.headers.get("Authorization", "")
-        bearer = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
-        return bool(self.token and (query_token == self.token or bearer == self.token))
-
-    @staticmethod
-    def _forbidden() -> web.Response:
-        return web.Response(
-            status=403,
-            text="Forbidden: missing or invalid token.",
-            content_type="text/plain",
+        session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
+        return bool(
+            self.token
+            and session_token
+            and secrets.compare_digest(session_token, self.token)
         )
+
+    def _forbidden(self) -> web.Response:
+        raise web.HTTPFound("/login")
 
     def _html_response(
         self,
         title: str,
         content: str,
         status: int = 200,
+        show_logout: bool = True,
     ) -> web.Response:
+        logout_html = (
+            """
+            <form class="logout-form" method="post" action="/logout">
+              <button class="secondary compact-button" type="submit">退出</button>
+            </form>
+            """
+            if show_logout
+            else ""
+        )
         return web.Response(
             status=status,
             text=f"""<!doctype html>
@@ -1039,6 +1101,8 @@ class SaveWebViewer:
     :root {{ color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     body {{ margin: 0; background: linear-gradient(180deg, #f3f6fb 0%, #eef3f8 42%, #f8fafc 100%); color: #20242a; -webkit-font-smoothing: antialiased; }}
     main {{ max-width: 1160px; margin: 0 auto; padding: 30px 20px 52px; }}
+    .topbar {{ display: flex; justify-content: flex-end; min-height: 36px; margin-bottom: 8px; }}
+    .logout-form {{ margin: 0; }}
     h1 {{ margin: 0 0 12px; font-size: 30px; letter-spacing: 0; }}
     h2 {{ margin: 24px 0 10px; font-size: 18px; }}
     .muted {{ color: #68707d; }}
@@ -1055,6 +1119,7 @@ class SaveWebViewer:
     .inline-form {{ display: inline; margin: 0; }}
     .compact-button {{ margin: 0; padding: 6px 10px; font-size: 13px; }}
     label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
+    input[type="text"] {{ width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #c8d0dc; border-radius: 7px; font: inherit; background: #fbfdff; }}
     textarea {{ width: 100%; resize: vertical; padding: 12px; border: 1px solid #c8d0dc; border-radius: 7px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 13px; line-height: 1.5; box-sizing: border-box; background: #fbfdff; transition: border-color .15s ease, box-shadow .15s ease; }}
     textarea:focus, input:focus, select:focus {{ outline: none; border-color: #1f6feb !important; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.13); }}
     textarea.note-editor {{ min-height: 132px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
@@ -1065,6 +1130,7 @@ class SaveWebViewer:
     button.danger:hover {{ background: #931f15; }}
     .actions {{ display: flex; gap: 10px; align-items: center; }}
     .error {{ color: #b42318; font-weight: 700; }}
+    .login-panel {{ max-width: 420px; margin: 12vh auto 0; padding: 24px; border: 1px solid #dde2ea; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06); }}
     .danger-zone {{ display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 22px; padding: 14px 16px; border: 1px solid #f0b8b0; border-radius: 8px; background: #fff5f3; color: #6f1d15; }}
     .danger-zone span {{ color: #7a3b34; }}
     .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin: 16px 0 8px; padding: 10px 12px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 6px 14px rgba(31, 41, 55, 0.05); }}
@@ -1154,7 +1220,7 @@ class SaveWebViewer:
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>
 </head>
-<body><main>{content}</main></body>
+<body><main><div class="topbar">{logout_html}</div>{content}</main></body>
 </html>""",
             content_type="text/html",
         )
@@ -1209,7 +1275,6 @@ class SaveWebViewer:
             note_preview = self._e(item.get("note_preview", ""))
             href = (
                 f"/editable/file?id={quote(raw_file_id, safe='')}"
-                f"&token={self._e(self.token)}"
             )
             rows.append(
                 "<tr>"
