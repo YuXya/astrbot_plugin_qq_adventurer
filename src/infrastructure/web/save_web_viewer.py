@@ -58,6 +58,7 @@ class SaveWebViewer:
         self._add_route(app, "POST", "/logout", self._logout)
         self._add_route(app, "GET", "/", self._index)
         self._add_route(app, "GET", "/player", self._player_detail)
+        self._add_route(app, "POST", "/player/profile/save", self._player_profile_save)
         self._add_route(app, "POST", "/player/delete", self._player_delete)
         self._add_route(app, "POST", "/player/log/delete", self._player_log_delete)
         self._add_route(app, "GET", "/player/file/source", self._player_file_source)
@@ -71,6 +72,7 @@ class SaveWebViewer:
         self._add_route(app, "GET", "/editable/source", self._editable_source)
         self._add_route(app, "POST", "/editable/source/save", self._editable_source_save)
         self._add_route(app, "GET", "/editable/export", self._editable_export)
+        self._add_route(app, "GET", "/editable/export/key-info", self._editable_export_key_info)
         self._add_route(app, "POST", "/editable/import", self._editable_import)
         self._add_route(app, "GET", "/health", self._health)
 
@@ -420,6 +422,9 @@ class SaveWebViewer:
             f"/editable/source?id={quote(file_id, safe='')}&category={self._e(back_category)}"
         )
         export_url = self._url(f"/editable/export?id={quote(file_id, safe='')}")
+        key_info_export_url = self._url(
+            f"/editable/export/key-info?id={quote(file_id, safe='')}"
+        )
         return self._html_response(
             title,
             f"""
@@ -429,6 +434,7 @@ class SaveWebViewer:
             <div class="source-actions">
               <a class="button-link secondary-link" href="{source_url}">编辑源码</a>
               <a class="button-link secondary-link" href="{export_url}">导出 JSON</a>
+              <a class="button-link secondary-link" href="{key_info_export_url}">导出关键信息 TXT</a>
               <form class="inline-import-form" method="post" action="{self._url('/editable/import')}" enctype="multipart/form-data">
                 <input type="hidden" name="id" value="{self._e(file_id)}">
                 <input type="hidden" name="category" value="{self._e(back_category)}">
@@ -815,6 +821,22 @@ class SaveWebViewer:
         content = self.editable_manager.read_text(file_id)
         return self._download_response(file_id.replace("/", "_"), content, "application/json")
 
+    async def _editable_export_key_info(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        file_id = request.query.get("id", "")
+        if not self._is_structured_book_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable key info export file")
+        content = self.editable_manager.read_text(file_id)
+        try:
+            key_info = self._format_book_key_info(json.loads(content))
+        except Exception as exc:
+            raise web.HTTPBadRequest(text=f"invalid editable book JSON: {exc}") from exc
+
+        filename = file_id.replace("/", "_").replace(".json", "_key_info.txt")
+        return self._download_response(filename, key_info, "text/plain")
+
     async def _editable_import(self, request: web.Request) -> web.Response:
         if not self._is_admin(request):
             return self._forbidden()
@@ -931,6 +953,36 @@ class SaveWebViewer:
             book["base_path"] = str(book.get("base_path") or "")
         book["entries"] = normalized_entries
         return book
+
+    @classmethod
+    def _format_book_key_info(cls, raw: object) -> str:
+        book = cls._normalize_world_book(raw)
+        entries = book.get("entries", [])
+        if not isinstance(entries, list):
+            return ""
+
+        lines: list[str] = []
+        indexed_entries = [
+            (index, entry)
+            for index, entry in enumerate(entries)
+            if isinstance(entry, dict)
+        ]
+        for index, entry in sorted(
+            indexed_entries,
+            key=lambda item: (int(item[1].get("order", 100)), item[0]),
+        ):
+            title = cls._single_line_text(
+                entry.get("title") or entry.get("id") or f"条目{index + 1}"
+            )
+            content = cls._single_line_text(entry.get("content") or "")
+            if not content:
+                continue
+            lines.append(f"{title}：{content}")
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    @staticmethod
+    def _single_line_text(value: object) -> str:
+        return re.sub(r"\s+", " ", str(value or "")).strip()
 
     @staticmethod
     def _default_book_display_name(file_id: str) -> str:
@@ -1088,6 +1140,8 @@ class SaveWebViewer:
         group_id = request.query.get("group_id", "")
         user_id = request.query.get("user_id", "")
         is_admin = session["role"] == SESSION_ADMIN_ROLE
+        if not self._can_access_player(session, user_id):
+            return self._forbidden()
         detail = self.repository.read_save_detail(group_id, user_id)
         if detail is None:
             raise web.HTTPNotFound(text="save not found")
@@ -1098,7 +1152,14 @@ class SaveWebViewer:
         cameo_memories = detail.get("cameo_memories", [])
         card = profile.get("card", {}) if isinstance(profile, dict) else {}
         title_name = card.get("target_name") or profile.get("nickname") or user_id
-        summary = self._player_summary_html(group_id, user_id, profile, state, card)
+        summary = self._player_summary_html(
+            group_id,
+            user_id,
+            profile,
+            state,
+            card,
+            can_edit=True,
+        )
         log_cards = self._player_log_cards(group_id, user_id, logs, allow_delete=is_admin)
         cameo_cards = self._player_cameo_memory_cards(cameo_memories)
         source_file_panel = (
@@ -1170,6 +1231,87 @@ class SaveWebViewer:
             """,
         )
 
+    async def _player_profile_save(self, request: web.Request) -> web.Response:
+        session = self._session(request)
+        if not session:
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", "")).strip()
+        user_id = str(data.get("user_id", "")).strip()
+        if not group_id or not user_id:
+            raise web.HTTPBadRequest(text="missing group_id or user_id")
+        if not self._can_access_player(session, user_id):
+            return self._forbidden()
+
+        fields = [
+            "title",
+            "subtitle",
+            "target_name",
+            "race",
+            "class_name",
+            "appearance",
+            "personality",
+            "talent",
+            "birth_description",
+            "birth_region",
+            "birth_location",
+            "quote",
+            "footer",
+        ]
+        updates: dict[str, Any] = {
+            key: str(data.get(key, ""))
+            for key in fields
+        }
+        likes_text = str(data.get("likes", ""))
+        updates["likes"] = [
+            item.strip()
+            for item in re.split(r"[\n,，、]+", likes_text)
+            if item.strip()
+        ]
+
+        stats_raw = str(data.get("stats_json", "")).strip()
+        if stats_raw:
+            try:
+                stats = json.loads(stats_raw)
+            except json.JSONDecodeError as exc:
+                return self._html_response(
+                    "保存角色档案失败",
+                    f"""
+                    <h1>保存角色档案失败</h1>
+                    <p class="error">属性 JSON 格式不正确：{self._e(exc)}</p>
+                    <p><a class="button-link secondary-link" href="{self._url(f'/player?group_id={quote(group_id, safe="")}&user_id={quote(user_id, safe="")}')}">返回角色档案</a></p>
+                    """,
+                )
+            if not isinstance(stats, dict):
+                return self._html_response(
+                    "保存角色档案失败",
+                    f"""
+                    <h1>保存角色档案失败</h1>
+                    <p class="error">属性必须是 JSON 对象，例如 {self._e('{"力量": "A", "敏捷": "B"}')}。</p>
+                    <p><a class="button-link secondary-link" href="{self._url(f'/player?group_id={quote(group_id, safe="")}&user_id={quote(user_id, safe="")}')}">返回角色档案</a></p>
+                    """,
+                )
+            updates["stats"] = stats
+        else:
+            updates["stats"] = {}
+
+        try:
+            self.repository.update_profile_card(group_id, user_id, updates)
+        except Exception as exc:
+            return self._html_response(
+                "保存角色档案失败",
+                f"""
+                <h1>保存角色档案失败</h1>
+                <p class="error">{self._e(exc)}</p>
+                <p><a class="button-link secondary-link" href="{self._url(f'/player?group_id={quote(group_id, safe="")}&user_id={quote(user_id, safe="")}')}">返回角色档案</a></p>
+                """,
+            )
+
+        raise self._redirect(
+            f"/player?group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}"
+        )
+
     def _player_source_file_panel(self, group_id: str, user_id: str) -> str:
         rows = []
         for item in self.repository.list_player_source_files(group_id, user_id):
@@ -1224,6 +1366,7 @@ class SaveWebViewer:
         profile: dict[str, Any],
         state: dict[str, Any],
         card: dict[str, Any],
+        can_edit: bool = False,
     ) -> str:
         avatar_url = card.get("avatar_url") or ""
         avatar_html = (
@@ -1241,8 +1384,50 @@ class SaveWebViewer:
             f"<span class=\"tag\">{self._e(item)}</span>"
             for item in likes[:8]
         )
+        likes_text = "\n".join(str(item) for item in likes)
+        stats_json = json.dumps(stats, ensure_ascii=False, indent=2)
         created_at = self._format_time(profile.get("created_at"))
         updated_at = self._format_time(state.get("updated_at") or profile.get("updated_at"))
+        profile_panel = (
+            f"""
+              <form class="detail-panel profile-edit-panel" method="post" action="{self._url('/player/profile/save')}">
+                <input type="hidden" name="group_id" value="{self._e(group_id)}">
+                <input type="hidden" name="user_id" value="{self._e(user_id)}">
+                <div class="section-head profile-edit-head">
+                  <h2>角色档案</h2>
+                  <button class="compact-button" type="submit">保存</button>
+                </div>
+                <div class="profile-edit-grid">
+                  {self._profile_edit_field("标题", "title", card.get("title"))}
+                  {self._profile_edit_field("副标题", "subtitle", card.get("subtitle"))}
+                  {self._profile_edit_field("姓名", "target_name", card.get("target_name"))}
+                  {self._profile_edit_field("种族", "race", card.get("race"))}
+                  {self._profile_edit_field("职业", "class_name", card.get("class_name"))}
+                  {self._profile_edit_field("出生地区", "birth_region", card.get("birth_region"))}
+                  {self._profile_edit_field("出生地点", "birth_location", card.get("birth_location"))}
+                </div>
+                {self._profile_edit_field("外貌", "appearance", card.get("appearance"), multiline=True)}
+                {self._profile_edit_field("性格", "personality", card.get("personality"), multiline=True)}
+                {self._profile_edit_field("天赋", "talent", card.get("talent"), multiline=True)}
+                {self._profile_edit_field("初醒之地", "birth_description", card.get("birth_description"), multiline=True)}
+                {self._profile_edit_field("喜好", "likes", likes_text, multiline=True)}
+                {self._profile_edit_field("属性 JSON", "stats_json", stats_json, multiline=True, monospace=True)}
+                {self._profile_edit_field("台词", "quote", card.get("quote"), multiline=True)}
+                {self._profile_edit_field("页脚", "footer", card.get("footer"))}
+              </form>
+            """
+            if can_edit
+            else f"""
+              <article class="detail-panel">
+                <h2>角色档案</h2>
+                {self._profile_field("外貌", card.get("appearance"))}
+                {self._profile_field("性格", card.get("personality"))}
+                {self._profile_field("天赋", card.get("talent"))}
+                {self._profile_field("初醒之地", card.get("birth_description"))}
+                {self._profile_field("台词", card.get("quote"))}
+              </article>
+            """
+        )
         return f"""
             <section class="hero-card">
               <div class="avatar-large">{avatar_html}</div>
@@ -1261,14 +1446,7 @@ class SaveWebViewer:
               </div>
             </section>
             <section class="detail-grid">
-              <article class="detail-panel">
-                <h2>角色档案</h2>
-                {self._profile_field("外貌", card.get("appearance"))}
-                {self._profile_field("性格", card.get("personality"))}
-                {self._profile_field("天赋", card.get("talent"))}
-                {self._profile_field("初醒之地", card.get("birth_description"))}
-                {self._profile_field("台词", card.get("quote"))}
-              </article>
+              {profile_panel}
               <article class="detail-panel">
                 <h2>当前状态</h2>
                 <div class="stats-grid">{stat_items}</div>
@@ -1283,6 +1461,30 @@ class SaveWebViewer:
                 </div>
               </article>
             </section>
+        """
+
+    def _profile_edit_field(
+        self,
+        label: str,
+        name: str,
+        value: object,
+        multiline: bool = False,
+        monospace: bool = False,
+    ) -> str:
+        value_text = self._e(value or "")
+        class_name = "profile-edit-textarea"
+        if monospace:
+            class_name += " monospace-editor"
+        control = (
+            f"<textarea class=\"{class_name}\" name=\"{self._e(name)}\">{value_text}</textarea>"
+            if multiline
+            else f"<input type=\"text\" name=\"{self._e(name)}\" value=\"{value_text}\">"
+        )
+        return f"""
+            <label class="profile-edit-field">
+              <span>{self._e(label)}</span>
+              {control}
+            </label>
         """
 
     def _profile_field(self, label: str, value: object) -> str:
@@ -1533,6 +1735,11 @@ class SaveWebViewer:
         session = self._session(request)
         return bool(session and session["role"] == SESSION_ADMIN_ROLE)
 
+    def _can_access_player(self, session: dict[str, str], user_id: str) -> bool:
+        if session["role"] == SESSION_ADMIN_ROLE:
+            return True
+        return session["user_id"] == self._safe_session_id(user_id)
+
     def _session(self, request: web.Request) -> dict[str, str] | None:
         raw = request.cookies.get(SESSION_COOKIE_NAME, "")
         if not raw or not self.token:
@@ -1769,6 +1976,15 @@ class SaveWebViewer:
     .profile-field:first-of-type {{ border-top: 0; }}
     .profile-field span {{ display: block; margin-bottom: 5px; color: #68707d; font-size: 13px; font-weight: 800; }}
     .profile-field p {{ margin: 0; line-height: 1.7; }}
+    .profile-edit-panel {{ align-self: start; }}
+    .profile-edit-head {{ margin-bottom: 8px; align-items: center; }}
+    .profile-edit-head h2 {{ margin: 0; }}
+    .profile-edit-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }}
+    .profile-edit-field {{ margin: 10px 0 0; }}
+    .profile-edit-field span {{ display: block; margin-bottom: 5px; color: #68707d; font-size: 13px; font-weight: 800; }}
+    .profile-edit-field input[type="text"] {{ padding: 8px 10px; min-height: 38px; }}
+    textarea.profile-edit-textarea {{ min-height: 72px; resize: vertical; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    textarea.profile-edit-textarea.monospace-editor {{ min-height: 96px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; }}
     .stats-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }}
     .stat-pill {{ padding: 12px; border-radius: 8px; background: #f7fafc; border: 1px solid #dde2ea; }}
     .stat-pill span, .meta-list span {{ display: block; color: #68707d; font-size: 12px; font-weight: 800; }}
@@ -1813,6 +2029,7 @@ class SaveWebViewer:
     @media (max-width: 900px) {{ .state-overview-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     @media (max-width: 900px) {{ .detail-grid, .raw-grid {{ grid-template-columns: 1fr; }} }}
     @media (max-width: 560px) {{ .state-overview-grid {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 560px) {{ .profile-edit-grid {{ grid-template-columns: 1fr; }} }}
     @media (max-width: 720px) {{ .world-entry-grid, .book-config-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} .hero-card {{ align-items: flex-start; }} .log-card-head {{ flex-direction: column; }} }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>

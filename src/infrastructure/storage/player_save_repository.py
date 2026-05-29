@@ -382,6 +382,62 @@ class PlayerSaveRepository:
             ),
         }
 
+    def update_profile_card(
+        self,
+        group_id: str,
+        user_id: str,
+        updates: dict[str, Any],
+    ) -> None:
+        user_dir = self.get_user_dir(group_id, user_id)
+        profile_path = user_dir / "profile.json"
+        profile = self._read_json(profile_path)
+        if not profile:
+            raise ValueError("玩家 profile.json 不存在或无法读取")
+        card = profile.get("card")
+        if not isinstance(card, dict):
+            card = {}
+            profile["card"] = card
+
+        string_fields = {
+            "title",
+            "subtitle",
+            "target_name",
+            "race",
+            "class_name",
+            "appearance",
+            "personality",
+            "talent",
+            "birth_description",
+            "birth_region",
+            "birth_location",
+            "quote",
+            "footer",
+        }
+        for key in string_fields:
+            if key in updates:
+                card[key] = str(updates.get(key) or "").strip()
+
+        if "likes" in updates:
+            likes = updates.get("likes")
+            if isinstance(likes, list):
+                card["likes"] = [str(item).strip() for item in likes if str(item).strip()]
+
+        if "stats" in updates:
+            stats = updates.get("stats")
+            if isinstance(stats, dict):
+                card["stats"] = {
+                    str(key).strip(): str(value).strip()
+                    for key, value in stats.items()
+                    if str(key).strip()
+                }
+
+        target_name = str(card.get("target_name") or "").strip()
+        if target_name:
+            profile["nickname"] = target_name
+        profile["updated_at"] = self._now_ms()
+        self._atomic_write_json(profile_path, profile)
+        self.rebuild_player_index(group_id, user_id)
+
     def list_player_source_files(self, group_id: str, user_id: str) -> list[dict[str, Any]]:
         user_dir = self.get_user_dir(group_id, user_id)
         return [
