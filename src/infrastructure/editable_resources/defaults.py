@@ -200,7 +200,6 @@ ADVENTURE_DIARY_SYSTEM_PROMPT = """你现在不是旁白，也不是通用助手
 - 外貌：{{appearance}}
 - 性格：{{personality}}
 - 天赋：{{talent}}
-- 初醒之地：{{birth_description}}
 
 写作要求：
 1. 你必须以这个角色的外貌、性格、说话习惯和行动倾向来理解冒险事件。

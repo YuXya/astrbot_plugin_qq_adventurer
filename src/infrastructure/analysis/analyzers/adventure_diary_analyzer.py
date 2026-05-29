@@ -69,7 +69,11 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             user_id=user_id,
             nickname=nickname,
         )
-        system_prompt = self._build_diary_character_system_prompt(profile)
+        include_birth_fields = self._is_first_adventure(logs)
+        system_prompt = self._build_diary_character_system_prompt(
+            profile,
+            include_birth_fields=include_birth_fields,
+        )
         if self.config_manager.get_debug_mode():
             self._save_debug_file("diary_prompt", prompt)
             self._save_debug_file("diary_system_prompt", system_prompt)
@@ -113,7 +117,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         user_id: str | None,
         nickname: str | None,
     ) -> str:
-        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        include_birth_fields = self._is_first_adventure(logs)
+        card = self._diary_profile_card(profile, include_birth_fields=include_birth_fields)
         current_level = self.domain_service.get_current_level(state)
         action = action_text.strip() or "玩家没有指定行动，请根据当前状态自由生成一次小冒险。"
         scan_parts = [
@@ -147,8 +152,15 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             },
         )
 
-    def _build_diary_character_system_prompt(self, profile: dict) -> str:
-        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+    def _build_diary_character_system_prompt(
+        self,
+        profile: dict,
+        include_birth_fields: bool = True,
+    ) -> str:
+        card = self._diary_profile_card(
+            profile,
+            include_birth_fields=include_birth_fields,
+        )
         return self.editable_manager.render_prompt(
             "adventure_diary_system_prompt",
             {
@@ -158,12 +170,31 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 "appearance": self._card_text(card, "appearance", "转生后的可爱异世界外貌"),
                 "personality": self._card_text(card, "personality", "保留转生卡中的性格"),
                 "talent": self._card_text(card, "talent", "尚未觉醒的天赋"),
-                "birth_description": self._card_text(
-                    card,
-                    "birth_description",
-                    "她最初在异世界某个陌生地点醒来，周围情况还不明朗。",
-                ),
+                "birth_description": self._card_text(card, "birth_description", ""),
             },
+        )
+
+    @staticmethod
+    def _diary_profile_card(
+        profile: dict,
+        include_birth_fields: bool = True,
+    ) -> dict:
+        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        if not isinstance(card, dict):
+            return {}
+        if include_birth_fields:
+            return dict(card)
+        return {
+            key: value
+            for key, value in card.items()
+            if key not in {"birth_description", "birth_region", "birth_location"}
+        }
+
+    @staticmethod
+    def _is_first_adventure(logs: list[dict]) -> bool:
+        return not any(
+            isinstance(item, dict) and item.get("type") == "adventure_diary"
+            for item in logs
         )
 
     @staticmethod

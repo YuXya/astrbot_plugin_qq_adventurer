@@ -243,6 +243,10 @@ class PlayerSaveRepository:
                 )
         return saves
 
+    def list_saves_by_user(self, user_id: str) -> list[dict[str, Any]]:
+        safe_user = self._safe_id(user_id)
+        return [item for item in self.list_saves() if item.get("user_id") == safe_user]
+
     def read_save_detail(self, group_id: str, user_id: str) -> dict[str, Any] | None:
         user_dir = self.get_user_dir(group_id, user_id)
         if not user_dir.exists():

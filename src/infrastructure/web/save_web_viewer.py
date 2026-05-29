@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import html
+import hmac
 import json
+import re
 import secrets
 from typing import Any
 from urllib.parse import quote
@@ -19,6 +21,8 @@ from ..storage.state_progress import (
 
 ADMIN_LOGIN_CODE = "优夏酱世界第一可爱"
 SESSION_COOKIE_NAME = "qq_adventurer_session"
+SESSION_ADMIN_ROLE = "admin"
+SESSION_USER_ROLE = "user"
 
 
 class SaveWebViewer:
@@ -91,13 +95,18 @@ class SaveWebViewer:
     async def _login(self, request: web.Request) -> web.Response:
         data = await request.post()
         qq_id = str(data.get("qq_id", "")).strip()
-        if qq_id != ADMIN_LOGIN_CODE:
-            return self._login_response("登录失败，请检查输入。", status=401)
+        if qq_id == ADMIN_LOGIN_CODE:
+            cookie_value = self._build_session_cookie(SESSION_ADMIN_ROLE)
+        else:
+            saves = self.repository.list_saves_by_user(qq_id)
+            if not saves:
+                return self._login_response("没有找到这个 QQ 号的异世界存档。", status=401)
+            cookie_value = self._build_session_cookie(SESSION_USER_ROLE, self._safe_session_id(qq_id))
 
         response = self._redirect("/")
         response.set_cookie(
             SESSION_COOKIE_NAME,
-            self.token,
+            cookie_value,
             httponly=True,
             samesite="Lax",
             path=self._cookie_path(),
@@ -137,41 +146,35 @@ class SaveWebViewer:
         return web.json_response({"ok": True})
 
     async def _index(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        session = self._session(request)
+        if not session:
             return self._forbidden()
+        if session["role"] == SESSION_USER_ROLE:
+            return self._user_index(session["user_id"])
 
         saves = self.repository.list_saves()
         rows = []
         for item in saves:
-            group_id = self._e(item.get("group_id", ""))
-            user_id = self._e(item.get("user_id", ""))
-            nickname = self._e(item.get("nickname") or item.get("target_name") or "未命名")
-            race = self._e(item.get("race", ""))
-            class_name = self._e(item.get("class_name", ""))
-            level = self._e(f"Lv.{item.get('level', 1)}")
-            region = self._e(item.get("region", ""))
-            location = self._e(item.get("location", ""))
-            updated_at = self._format_time(item.get("updated_at"))
-            href = self._url(f"/player?group_id={group_id}&user_id={user_id}")
+            row = self._save_table_row(item)
             delete_form = (
                 f"<form class=\"inline-form\" method=\"post\" action=\"{self._url('/player/delete')}\" "
                 "onsubmit=\"return confirm('确定删除这个玩家存档？此操作不可恢复。');\">"
-                f"<input type=\"hidden\" name=\"group_id\" value=\"{group_id}\">"
-                f"<input type=\"hidden\" name=\"user_id\" value=\"{user_id}\">"
+                f"<input type=\"hidden\" name=\"group_id\" value=\"{row['group_id']}\">"
+                f"<input type=\"hidden\" name=\"user_id\" value=\"{row['user_id']}\">"
                 "<button class=\"danger compact-button\" type=\"submit\">删除</button>"
                 "</form>"
             )
             rows.append(
                 "<tr>"
-                f"<td>{group_id}</td>"
-                f"<td>{user_id}</td>"
-                f"<td><a href=\"{href}\">{nickname}</a></td>"
-                f"<td>{race}</td>"
-                f"<td>{class_name}</td>"
-                f"<td>{level}</td>"
-                f"<td>{region}</td>"
-                f"<td>{location}</td>"
-                f"<td>{updated_at}</td>"
+                f"<td>{row['group_id']}</td>"
+                f"<td>{row['user_id']}</td>"
+                f"<td><a href=\"{row['href']}\">{row['nickname']}</a></td>"
+                f"<td>{row['race']}</td>"
+                f"<td>{row['class_name']}</td>"
+                f"<td>{row['level']}</td>"
+                f"<td>{row['region']}</td>"
+                f"<td>{row['location']}</td>"
+                f"<td>{row['updated_at']}</td>"
                 f"<td>{delete_form}</td>"
                 "</tr>"
             )
@@ -198,8 +201,60 @@ class SaveWebViewer:
             """,
         )
 
+    def _user_index(self, user_id: str) -> web.Response:
+        saves = self.repository.list_saves_by_user(user_id)
+        rows = []
+        for item in saves:
+            row = self._save_table_row(item)
+            rows.append(
+                "<tr>"
+                f"<td>{row['group_id']}</td>"
+                f"<td><a href=\"{row['href']}\">{row['nickname']}</a></td>"
+                f"<td>{row['race']}</td>"
+                f"<td>{row['class_name']}</td>"
+                f"<td>{row['level']}</td>"
+                f"<td>{row['region']}</td>"
+                f"<td>{row['location']}</td>"
+                f"<td>{row['updated_at']}</td>"
+                "</tr>"
+            )
+
+        body = "\n".join(rows) or "<tr><td colspan=\"8\">还没有找到你的异世界存档。</td></tr>"
+        return self._html_response(
+            "我的异世界存档",
+            f"""
+            <h1>我的异世界存档</h1>
+            <p class="muted">当前登录 QQ：{self._e(user_id)}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>群</th><th>角色</th><th>种族</th><th>职阶</th><th>等级</th><th>区域</th><th>地点</th><th>更新时间</th>
+                </tr>
+              </thead>
+              <tbody>{body}</tbody>
+            </table>
+            """,
+        )
+
+    def _save_table_row(self, item: dict[str, Any]) -> dict[str, str]:
+        group_id = self._e(item.get("group_id", ""))
+        user_id = self._e(item.get("user_id", ""))
+        href = self._url(f"/player?group_id={group_id}&user_id={user_id}")
+        return {
+            "group_id": group_id,
+            "user_id": user_id,
+            "nickname": self._e(item.get("nickname") or item.get("target_name") or "未命名"),
+            "race": self._e(item.get("race", "")),
+            "class_name": self._e(item.get("class_name", "")),
+            "level": self._e(f"{item.get('level', 1)}级"),
+            "region": self._e(item.get("region", "")),
+            "location": self._e(item.get("location", "")),
+            "updated_at": self._format_time(item.get("updated_at")),
+            "href": href,
+        }
+
     async def _editable_index(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         selected_category = request.query.get("category", "world_background")
@@ -230,7 +285,7 @@ class SaveWebViewer:
         )
 
     async def _editable_file(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         file_id = request.query.get("id", "")
@@ -672,7 +727,7 @@ class SaveWebViewer:
         )
 
     async def _editable_save(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         data = await request.post()
@@ -775,7 +830,7 @@ class SaveWebViewer:
         )
 
     async def _editable_reset(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         data = await request.post()
@@ -803,11 +858,13 @@ class SaveWebViewer:
         )
 
     async def _player_detail(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        session = self._session(request)
+        if not session:
             return self._forbidden()
 
         group_id = request.query.get("group_id", "")
         user_id = request.query.get("user_id", "")
+        is_admin = session["role"] == SESSION_ADMIN_ROLE
         detail = self.repository.read_save_detail(group_id, user_id)
         if detail is None:
             raise web.HTTPNotFound(text="save not found")
@@ -818,9 +875,27 @@ class SaveWebViewer:
         card = profile.get("card", {}) if isinstance(profile, dict) else {}
         title_name = card.get("target_name") or profile.get("nickname") or user_id
         summary = self._player_summary_html(group_id, user_id, profile, state, card)
-        log_cards = self._player_log_cards(group_id, user_id, logs)
+        log_cards = self._player_log_cards(group_id, user_id, logs, allow_delete=is_admin)
         progress_overview = self._progress_overview_html(state)
         state_overview = self._state_overview_html(state)
+        log_note = (
+            "删除单条记录只会移除 adventure_log.jsonl 中对应一行，不会回滚当前 state。"
+            if is_admin
+            else "这里展示该存档最近的冒险记录。"
+        )
+        danger_zone = (
+            f"""
+            <form class="danger-zone" method="post" action="{self._url('/player/delete')}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
+              <input type="hidden" name="group_id" value="{self._e(group_id)}">
+              <input type="hidden" name="user_id" value="{self._e(user_id)}">
+              <strong>危险操作</strong>
+              <span>删除该玩家的 profile、state 和 adventure_log。</span>
+              <button class="danger" type="submit">删除玩家存档</button>
+            </form>
+            """
+            if is_admin
+            else ""
+        )
 
         return self._html_response(
             f"玩家存档 - {title_name}",
@@ -835,7 +910,7 @@ class SaveWebViewer:
               <div class="section-head">
                 <div>
                   <h2>冒险记录</h2>
-                  <p class="muted">删除单条记录只会移除 adventure_log.jsonl 中对应一行，不会回滚当前 state。</p>
+                  <p class="muted">{self._e(log_note)}</p>
                 </div>
               </div>
               <div class="log-list">{log_cards}</div>
@@ -851,13 +926,7 @@ class SaveWebViewer:
               </details>
             </section>
             {state_overview}
-            <form class="danger-zone" method="post" action="{self._url('/player/delete')}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
-              <input type="hidden" name="group_id" value="{self._e(group_id)}">
-              <input type="hidden" name="user_id" value="{self._e(user_id)}">
-              <strong>危险操作</strong>
-              <span>删除该玩家的 profile、state 和 adventure_log。</span>
-              <button class="danger" type="submit">删除玩家存档</button>
-            </form>
+            {danger_zone}
             """,
         )
 
@@ -942,6 +1011,7 @@ class SaveWebViewer:
         group_id: str,
         user_id: str,
         logs: list[dict[str, Any]],
+        allow_delete: bool = False,
     ) -> str:
         if not logs:
             return "<p class=\"muted empty-state\">还没有冒险记录。</p>"
@@ -980,7 +1050,7 @@ class SaveWebViewer:
                 else ""
             )
             delete_button = ""
-            if log_index >= 0 and raw_log_type == "adventure_diary":
+            if allow_delete and log_index >= 0 and raw_log_type == "adventure_diary":
                 delete_button = f"""
                   <form class="inline-form" method="post" action="{self._url('/player/log/delete')}" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
                     <input type="hidden" name="group_id" value="{self._e(group_id)}">
@@ -1096,7 +1166,7 @@ class SaveWebViewer:
         """
 
     async def _player_log_delete(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         data = await request.post()
@@ -1115,7 +1185,7 @@ class SaveWebViewer:
         )
 
     async def _player_delete(self, request: web.Request) -> web.Response:
-        if not self._is_authorized(request):
+        if not self._is_admin(request):
             return self._forbidden()
 
         data = await request.post()
@@ -1128,12 +1198,46 @@ class SaveWebViewer:
         raise self._redirect("/")
 
     def _is_authorized(self, request: web.Request) -> bool:
-        session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
-        return bool(
-            self.token
-            and session_token
-            and secrets.compare_digest(session_token, self.token)
-        )
+        return self._session(request) is not None
+
+    def _is_admin(self, request: web.Request) -> bool:
+        session = self._session(request)
+        return bool(session and session["role"] == SESSION_ADMIN_ROLE)
+
+    def _session(self, request: web.Request) -> dict[str, str] | None:
+        raw = request.cookies.get(SESSION_COOKIE_NAME, "")
+        if not raw or not self.token:
+            return None
+        parts = raw.split(":")
+        if len(parts) == 2 and parts[0] == SESSION_ADMIN_ROLE:
+            role, signature = parts
+            payload = role
+            if hmac.compare_digest(signature, self._session_signature(payload)):
+                return {"role": role, "user_id": ""}
+            return None
+        if len(parts) == 3 and parts[0] == SESSION_USER_ROLE:
+            role, user_id, signature = parts
+            payload = f"{role}:{user_id}"
+            if hmac.compare_digest(signature, self._session_signature(payload)):
+                return {"role": role, "user_id": user_id}
+        return None
+
+    def _build_session_cookie(self, role: str, user_id: str = "") -> str:
+        payload = role if role == SESSION_ADMIN_ROLE else f"{role}:{user_id}"
+        return f"{payload}:{self._session_signature(payload)}"
+
+    def _session_signature(self, payload: str) -> str:
+        return hmac.new(
+            self.token.encode("utf-8"),
+            payload.encode("utf-8"),
+            "sha256",
+        ).hexdigest()
+
+    @staticmethod
+    def _safe_session_id(value: object) -> str:
+        text = str(value or "unknown").strip()
+        text = re.sub(r"[^0-9A-Za-z_.-]+", "_", text)
+        return text[:80] or "unknown"
 
     def _forbidden(self) -> web.Response:
         raise self._redirect("/login")
