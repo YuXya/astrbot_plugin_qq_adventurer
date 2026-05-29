@@ -1091,11 +1091,11 @@ class SaveWebViewer:
             state,
             self.editable_manager.read_book_base_path(
                 "skill_book/default.json",
-                "/主角/技能/技能名/",
+                "/主角/技能/",
             ),
             self.editable_manager.read_book_base_path(
                 "status_book/default.json",
-                "/主角/状态/状态名/",
+                "/主角/快感状态/性癖/",
             ),
             limit=16,
         )

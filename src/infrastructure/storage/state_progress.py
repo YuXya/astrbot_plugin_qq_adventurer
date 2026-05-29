@@ -169,7 +169,13 @@ def _base_path_pattern(base_path: str) -> tuple[str, ...]:
 
 
 def _matched_label(path: tuple[str, ...], pattern: tuple[str, ...]) -> str | None:
-    if not path or not pattern or len(path) != len(pattern):
+    if not path or not pattern:
+        return None
+
+    if len(path) > len(pattern) and path[: len(pattern)] == pattern:
+        return state_label(path[len(pattern)])
+
+    if len(path) != len(pattern):
         return None
 
     wildcard_index = len(pattern) - 1

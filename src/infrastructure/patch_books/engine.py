@@ -25,7 +25,7 @@ class PatchBookEngine:
         if not matched:
             return ""
 
-        base_path = self._book_base_path(book, "/主角/技能/技能名/")
+        base_path = self._book_base_path(book, "/主角/技能/")
         entries_text = "\n".join(
             f"- {entry.title or entry.id}：{entry.content}"
             for entry in matched
@@ -58,7 +58,7 @@ class PatchBookEngine:
             if (entry.title or entry.id) and (entry.title or entry.id) not in owned_names
         ]
 
-        base_path = self._book_base_path(book, "/主角/状态/状态名/")
+        base_path = self._book_base_path(book, "/主角/快感状态/性癖/")
         if matched:
             owned_entries = "\n".join(
                 f"- {entry.title or entry.id}：{entry.content}"
