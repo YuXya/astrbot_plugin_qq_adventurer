@@ -1506,7 +1506,7 @@ class SaveWebViewer:
             return "<p class=\"muted empty-state\">还没有冒险记录。</p>"
 
         cards: list[str] = []
-        for display_index, log in enumerate(reversed(logs), start=1):
+        for display_index, log in enumerate(logs, start=1):
             log_index = int(log.get("_log_index", -1))
             raw_log_type = str(log.get("type", "log"))
             log_type = self._e(raw_log_type)
@@ -1550,27 +1550,38 @@ class SaveWebViewer:
                 """
             cards.append(
                 f"""
-                <article class="log-card">
-                  <div class="log-card-head">
-                    <div>
-                      <span class="log-index">#{display_index}</span>
-                      <h3>{title}</h3>
+                <details class="log-card">
+                  <summary class="log-card-summary">
+                    <div class="log-card-head">
+                      <div>
+                        <span class="log-index">#{display_index}</span>
+                        <h3>{title}</h3>
+                      </div>
+                      {delete_button}
                     </div>
-                    {delete_button}
+                    <div class="log-meta summary-meta">
+                      <span>{self._e(created_at)}</span>
+                      <span>{log_type}</span>
+                      {region_html}
+                      {location_html}
+                      {level_html}
+                    </div>
+                  </summary>
+                  <div class="log-card-body">
+                    <div class="log-meta">
+                      <span>{self._e(created_at)}</span>
+                      <span>{log_type}</span>
+                      {region_html}
+                      {location_html}
+                      {level_html}
+                    </div>
+                    {action_html}
+                    {diary_html}
+                    {encounter_html}
+                    <p class="log-result">{result}</p>
+                    {changes_block}
                   </div>
-                  <div class="log-meta">
-                    <span>{self._e(created_at)}</span>
-                    <span>{log_type}</span>
-                    {region_html}
-                    {location_html}
-                    {level_html}
-                  </div>
-                  {action_html}
-                  {diary_html}
-                  {encounter_html}
-                  <p class="log-result">{result}</p>
-                  {changes_block}
-                </article>
+                </details>
                 """
             )
         return "\n".join(cards)
@@ -1580,7 +1591,7 @@ class SaveWebViewer:
             return "<p class=\"muted empty-state\">还没有其他人与主角的交互。</p>"
 
         cards: list[str] = []
-        for display_index, memory in enumerate(reversed(memories), start=1):
+        for display_index, memory in enumerate(memories, start=1):
             title = self._e(memory.get("title") or "其他人与主角的交互")
             source_name = self._e(memory.get("source_target_name") or "未知角色")
             region = self._e(memory.get("region") or "")
@@ -1597,22 +1608,32 @@ class SaveWebViewer:
             )
             cards.append(
                 f"""
-                <article class="log-card cameo-card">
-                  <div class="log-card-head">
-                    <div>
-                      <span class="log-index">#{display_index}</span>
-                      <h3>{title}</h3>
+                <details class="log-card cameo-card">
+                  <summary class="log-card-summary">
+                    <div class="log-card-head">
+                      <div>
+                        <span class="log-index">#{display_index}</span>
+                        <h3>{title}</h3>
+                      </div>
                     </div>
+                    <div class="log-meta summary-meta">
+                      <span>{self._e(created_at)}</span>
+                      <span>来源：{source_name}</span>
+                      {region_html}
+                      {location_html}
+                    </div>
+                  </summary>
+                  <div class="log-card-body">
+                    <div class="log-meta">
+                      <span>{self._e(created_at)}</span>
+                      <span>来源：{source_name}</span>
+                      {region_html}
+                      {location_html}
+                    </div>
+                    {encounter_html}
+                    <p class="log-result">{result}</p>
                   </div>
-                  <div class="log-meta">
-                    <span>{self._e(created_at)}</span>
-                    <span>来源：{source_name}</span>
-                    {region_html}
-                    {location_html}
-                  </div>
-                  {encounter_html}
-                  <p class="log-result">{result}</p>
-                </article>
+                </details>
                 """
             )
         return "\n".join(cards)
@@ -2012,11 +2033,18 @@ class SaveWebViewer:
     .section-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
     .section-head h2 {{ margin-bottom: 4px; }}
     .log-list {{ display: grid; gap: 12px; }}
-    .log-card {{ padding: 15px; }}
+    .log-card {{ padding: 0; overflow: hidden; }}
+    .log-card-summary {{ display: block; padding: 15px; cursor: pointer; background: #fff; }}
+    .log-card-summary::-webkit-details-marker {{ display: none; }}
+    .log-card-summary::marker {{ content: ""; }}
+    .log-card[open] .log-card-summary {{ border-bottom: 1px solid #edf1f5; background: #f8fafc; }}
+    .log-card-body {{ padding: 0 15px 15px; }}
+    .log-card-body .log-meta {{ margin-top: 12px; }}
     .log-card-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }}
     .log-card h3 {{ margin: 2px 0 0; font-size: 17px; }}
     .log-index {{ color: #68707d; font-size: 12px; font-weight: 800; }}
     .log-meta {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; color: #59636e; font-size: 13px; }}
+    .summary-meta {{ margin-bottom: 0; }}
     .log-meta span {{ padding: 3px 8px; border-radius: 6px; background: #f3f6fb; border: 1px solid #e1e7ef; }}
     .log-action {{ margin: 10px 0 6px; color: #303846; font-weight: 700; }}
     .log-result {{ margin: 0; line-height: 1.7; color: #263241; }}
