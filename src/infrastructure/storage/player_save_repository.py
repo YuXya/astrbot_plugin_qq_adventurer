@@ -814,11 +814,35 @@ class PlayerSaveRepository:
                 "region": item.get("region", ""),
                 "location": item.get("location", ""),
                 "title": item.get("title", ""),
+                "_log_index": item.get("_log_index"),
             }
             for item in self._read_recent_logs(path, limit=max(limit * 4, limit))
             if item.get("type") == "cameo_memory"
         ]
         return memories[-limit:]
+
+    def delete_cameo_memory(self, group_id: str, user_id: str, log_index: int) -> bool:
+        user_dir = self.get_user_dir(group_id, user_id)
+        log_path = user_dir / "cameo_memory.jsonl"
+        root = self.root_dir.resolve()
+        target = log_path.resolve()
+        if root != target and root not in target.parents:
+            raise ValueError(f"非法快照路径: {target}")
+        if not log_path.exists():
+            return False
+
+        lines = log_path.read_text(encoding="utf-8").splitlines()
+        if log_index < 0 or log_index >= len(lines):
+            return False
+
+        del lines[log_index]
+        tmp_path = log_path.with_suffix(log_path.suffix + ".tmp")
+        text = "\n".join(lines)
+        if text:
+            text += "\n"
+        tmp_path.write_text(text, encoding="utf-8")
+        tmp_path.replace(log_path)
+        return True
 
     def _build_npc_package(
         self,

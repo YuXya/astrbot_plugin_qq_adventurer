@@ -61,6 +61,7 @@ class SaveWebViewer:
         self._add_route(app, "POST", "/player/profile/save", self._player_profile_save)
         self._add_route(app, "POST", "/player/delete", self._player_delete)
         self._add_route(app, "POST", "/player/log/delete", self._player_log_delete)
+        self._add_route(app, "POST", "/player/cameo/delete", self._player_cameo_delete)
         self._add_route(app, "GET", "/player/file/source", self._player_file_source)
         self._add_route(app, "POST", "/player/file/save", self._player_file_save)
         self._add_route(app, "GET", "/player/file/export", self._player_file_export)
@@ -1164,7 +1165,9 @@ class SaveWebViewer:
             can_edit=True,
         )
         log_cards = self._player_log_cards(group_id, user_id, logs, allow_delete=is_admin)
-        cameo_cards = self._player_cameo_memory_cards(cameo_memories)
+        cameo_cards = self._player_cameo_memory_cards(
+            group_id, user_id, cameo_memories, allow_delete=is_admin
+        )
         source_file_panel = (
             self._player_source_file_panel(group_id, user_id)
             if is_admin
@@ -1176,6 +1179,11 @@ class SaveWebViewer:
             "删除单条记录只会移除 adventure_log.jsonl 中对应一行，不会回滚当前 state。"
             if is_admin
             else "这里展示该存档最近的冒险记录。"
+        )
+        cameo_note = (
+            "删除单条记录只会移除 cameo_memory.jsonl 中对应一行。"
+            if is_admin
+            else "这里展示其他玩家日记里明确提到该角色的遭遇和结算。"
         )
         danger_zone = (
             f"""
@@ -1213,7 +1221,7 @@ class SaveWebViewer:
               <div class="section-head">
                 <div>
                   <h2>其他人与主角的交互</h2>
-                  <p class="muted">这里展示其他玩家日记里明确提到该角色的遭遇和结算。</p>
+                  <p class="muted">{self._e(cameo_note)}</p>
                 </div>
               </div>
               <div class="log-list">{cameo_cards}</div>
@@ -1589,7 +1597,13 @@ class SaveWebViewer:
             )
         return "\n".join(cards)
 
-    def _player_cameo_memory_cards(self, memories: list[dict[str, Any]]) -> str:
+    def _player_cameo_memory_cards(
+        self,
+        group_id: str,
+        user_id: str,
+        memories: list[dict[str, Any]],
+        allow_delete: bool = False,
+    ) -> str:
         if not memories:
             return "<p class=\"muted empty-state\">还没有其他人与主角的交互。</p>"
 
@@ -1609,6 +1623,17 @@ class SaveWebViewer:
                 if encounter
                 else ""
             )
+            delete_button = ""
+            if allow_delete and memory.get("_log_index") is not None:
+                log_index = memory["_log_index"]
+                delete_button = f"""
+                  <form class="inline-form" method="post" action="{self._url('/player/cameo/delete')}" onsubmit="return confirm('确定删除这条交互记录？');">
+                    <input type="hidden" name="group_id" value="{self._e(group_id)}">
+                    <input type="hidden" name="user_id" value="{self._e(user_id)}">
+                    <input type="hidden" name="log_index" value="{log_index}">
+                    <button class="danger compact-button" type="submit">删除记录</button>
+                  </form>
+                """
             cards.append(
                 f"""
                 <details class="log-card cameo-card">
@@ -1618,6 +1643,7 @@ class SaveWebViewer:
                         <span class="log-index">#{display_index}</span>
                         <h3>{title}</h3>
                       </div>
+                      {delete_button}
                     </div>
                     <div class="log-meta summary-meta">
                       <span>{self._e(created_at)}</span>
@@ -1735,6 +1761,25 @@ class SaveWebViewer:
             raise web.HTTPBadRequest(text="missing group_id, user_id or log_index")
 
         self.repository.delete_adventure_log(group_id, user_id, log_index)
+        raise web.HTTPFound(
+            self._url(f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}")
+        )
+
+    async def _player_cameo_delete(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", ""))
+        user_id = str(data.get("user_id", ""))
+        try:
+            log_index = int(data.get("log_index", -1))
+        except (TypeError, ValueError):
+            log_index = -1
+        if not group_id or not user_id or log_index < 0:
+            raise web.HTTPBadRequest(text="missing group_id, user_id or log_index")
+
+        self.repository.delete_cameo_memory(group_id, user_id, log_index)
         raise web.HTTPFound(
             self._url(f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}")
         )
