@@ -51,3 +51,11 @@ class LLMAdventureDiaryAnalyzer:
             token_usage=usage,
             raw_response=raw_response,
         )
+
+    async def compress_adventure_logs(
+        self,
+        *,
+        logs: list[dict],
+        umo: str | None = None,
+    ) -> str:
+        return await self.analyzer.compress_adventure_logs(logs=logs, umo=umo)

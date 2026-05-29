@@ -55,6 +55,14 @@ class ConfigManager:
     def get_max_history_messages(self) -> int:
         return int(self._get_group("adventure").get("max_history_messages", 120) or 120)
 
+    def get_diary_compress_interval(self) -> int:
+        value = int(self._get_group("adventure").get("diary_compress_interval", 10) or 0)
+        return max(0, value)
+
+    def get_diary_compress_count(self) -> int:
+        value = int(self._get_group("adventure").get("diary_compress_count", 6) or 0)
+        return max(0, value)
+
     def get_debug_mode(self) -> bool:
         return bool(self._get_group("adventure").get("debug_mode", False))
 

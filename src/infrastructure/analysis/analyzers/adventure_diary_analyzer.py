@@ -170,6 +170,40 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             },
         )
 
+    async def compress_adventure_logs(
+        self,
+        *,
+        logs: list[dict],
+        umo: str | None = None,
+    ) -> str:
+        if not logs:
+            return ""
+        prompt = "\n".join(
+            [
+                "请把以下多次异世界冒险日记压缩成“一次冒险记录”的文字量。",
+                "要求：",
+                "1. 只输出压缩后的正文，不要输出 JSON，不要加解释。",
+                "2. 保留关键人物、地点、事件、收获、损失、关系变化和长期影响。",
+                "3. 不要创造原文没有的新事实。",
+                "4. 文字量约等于一条普通冒险日记，适合后续继续作为历史记录参考。",
+                "",
+                "待压缩冒险记录：",
+                self._format_logs_for_compression(logs),
+            ]
+        )
+        if self.config_manager.get_debug_mode():
+            self._save_debug_file("diary_compress_prompt", prompt)
+        response = await call_provider_with_retry(
+            self.context,
+            self.config_manager,
+            prompt=prompt,
+            umo=umo,
+        )
+        result_text = extract_response_text(response)
+        if self.config_manager.get_debug_mode():
+            self._save_debug_file("diary_compress_response", result_text)
+        return result_text.strip()
+
     def _build_diary_character_system_prompt(
         self,
         profile: dict,
@@ -231,13 +265,16 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         if not logs:
             return "（暂无冒险日志。）"
         lines = []
-        for index, item in enumerate(logs[-8:], start=1):
+        for index, item in enumerate(logs, start=1):
             title = item.get("title") or item.get("message") or item.get("type") or "记录"
             action = item.get("action", "")
             result = item.get("result", "")
             level = item.get("level_change", "")
             region = item.get("region", "")
+            date_label = item.get("date_label", "")
             line = f"{index}. {title}"
+            if date_label:
+                line += f"；{date_label}"
             if action:
                 line += f"；行动：{action}"
             if region:
@@ -246,15 +283,36 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 line += f"；结果：{result}"
             if level:
                 line += f"；等级：{level}"
-            lines.append(line[:260])
+            lines.append(line)
         return "\n".join(lines)
 
     @staticmethod
     def _format_logs_for_scan(logs: list[dict]) -> str:
         return "\n".join(
             str(item.get("action") or item.get("result") or item.get("title") or "")
-            for item in logs[-8:]
+            for item in logs
         )
+
+    @staticmethod
+    def _format_logs_for_compression(logs: list[dict]) -> str:
+        parts = []
+        for index, item in enumerate(logs, start=1):
+            title = item.get("title") or item.get("date_label") or f"第 {index} 次冒险"
+            parts.append(
+                "\n".join(
+                    [
+                        f"【{title}】",
+                        f"行动：{item.get('action', '')}",
+                        f"地区：{item.get('region', '')}",
+                        f"地点：{item.get('location', '')}",
+                        f"日记：{item.get('diary', '')}",
+                        f"遭遇：{item.get('encounter', '')}",
+                        f"结算：{item.get('result', '')}",
+                        f"变化：{json.dumps(item.get('changes', []), ensure_ascii=False)}",
+                    ]
+                )
+            )
+        return "\n\n".join(parts)
 
     @staticmethod
     def _format_cameo_memories(cameo_memories: list[dict] | None) -> str:

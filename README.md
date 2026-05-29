@@ -153,6 +153,7 @@ data/plugin_data/astrbot_plugin_qq_adventurer/saves/groups/{group_id}/users/{use
 - `analysis_features.use_plugin_specific_persona`：是否强制使用插件指定人格。
 - `analysis_features.plugin_specific_persona_id`：插件指定人格 ID。
 - `adventure.max_history_messages`：读取群历史消息上限。
+- `adventure.diary_compress_interval` / `adventure.diary_compress_count`：冒险记录压缩配置。默认每 10 条未压缩冒险，把最早 6 条交给 AI 压缩为一条“第 1-6 次冒险”范围摘要。
 - `adventure.use_mock_data`：静态假数据模式。
 - `t2i_rendering`：HTML 转图片策略。
 - `performance.max_concurrent_t2i`：最大并发渲染数。

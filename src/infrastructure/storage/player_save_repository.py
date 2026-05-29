@@ -100,7 +100,7 @@ class PlayerSaveRepository:
         self,
         group_id: str,
         user_id: str,
-        log_limit: int = 12,
+        log_limit: int = 0,
     ) -> dict[str, Any] | None:
         user_dir = self.get_user_dir(group_id, user_id)
         profile_path = user_dir / "profile.json"
@@ -214,6 +214,7 @@ class PlayerSaveRepository:
                 "type": "adventure_diary",
                 "created_at": now,
                 "title": card.title,
+                "date_label": card.date_label,
                 "action": card.action,
                 "region": card.region,
                 "location": card.location,
@@ -226,6 +227,112 @@ class PlayerSaveRepository:
                 "update_patches": card.update_patches,
             },
         )
+
+    def maybe_compress_adventure_logs(
+        self,
+        group_id: str,
+        user_id: str,
+        *,
+        interval: int,
+        compress_count: int,
+        summary_text: str,
+    ) -> bool:
+        if interval <= 0 or compress_count <= 0 or compress_count >= interval:
+            return False
+        text = str(summary_text or "").strip()
+        if not text:
+            return False
+
+        user_dir = self.get_user_dir(group_id, user_id)
+        log_path = user_dir / "adventure_log.jsonl"
+        if not log_path.exists():
+            return False
+
+        try:
+            raw_lines = log_path.read_text(encoding="utf-8").splitlines()
+        except Exception as exc:
+            logger.warning(f"读取冒险日志失败，跳过压缩: {log_path} {exc}")
+            return False
+
+        parsed: list[dict[str, Any] | None] = []
+        normal_adventures: list[tuple[int, dict[str, Any]]] = []
+        adventure_ordinal = 0
+        for index, line in enumerate(raw_lines):
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                parsed.append(None)
+                continue
+            if not isinstance(item, dict):
+                parsed.append(None)
+                continue
+            parsed.append(item)
+            if item.get("type") == "adventure_summary":
+                adventure_ordinal = max(
+                    adventure_ordinal,
+                    int(item.get("adventure_to", 0) or 0),
+                )
+                continue
+            if item.get("type") == "adventure_diary":
+                adventure_ordinal += 1
+                normal_adventures.append((index, item))
+
+        if len(normal_adventures) < interval:
+            return False
+
+        selected = normal_adventures[:compress_count]
+        selected_indices = {index for index, _item in selected}
+        first_ordinal = self._adventure_ordinal_for_log(raw_lines, selected[0][0])
+        last_ordinal = self._adventure_ordinal_for_log(raw_lines, selected[-1][0])
+        summary_record = {
+            "type": "adventure_summary",
+            "created_at": self._now_ms(),
+            "title": f"第 {first_ordinal}-{last_ordinal} 次冒险",
+            "date_label": f"第 {first_ordinal}-{last_ordinal} 次冒险",
+            "adventure_from": first_ordinal,
+            "adventure_to": last_ordinal,
+            "compressed_count": len(selected),
+            "result": text,
+        }
+
+        next_lines: list[str] = []
+        inserted = False
+        for index, line in enumerate(raw_lines):
+            if index in selected_indices:
+                if not inserted:
+                    next_lines.append(json.dumps(summary_record, ensure_ascii=False))
+                    inserted = True
+                continue
+            next_lines.append(line)
+
+        tmp_path = log_path.with_suffix(log_path.suffix + ".tmp")
+        output = "\n".join(next_lines)
+        if output:
+            output += "\n"
+        tmp_path.write_text(output, encoding="utf-8")
+        tmp_path.replace(log_path)
+        return True
+
+    def get_adventure_logs_for_compression(
+        self,
+        group_id: str,
+        user_id: str,
+        *,
+        interval: int,
+        compress_count: int,
+    ) -> list[dict[str, Any]]:
+        if interval <= 0 or compress_count <= 0 or compress_count >= interval:
+            return []
+        user_dir = self.get_user_dir(group_id, user_id)
+        logs = self._read_recent_logs(user_dir / "adventure_log.jsonl", limit=0)
+        normal_adventures = [
+            item
+            for item in logs
+            if isinstance(item, dict) and item.get("type") == "adventure_diary"
+        ]
+        if len(normal_adventures) < interval:
+            return []
+        return normal_adventures[:compress_count]
 
     def append_log(self, group_id: str, user_id: str, record: dict[str, Any]) -> None:
         user_dir = self.get_user_dir(group_id, user_id)
@@ -646,8 +753,12 @@ class PlayerSaveRepository:
             return []
         try:
             all_lines = path.read_text(encoding="utf-8").splitlines()
-            start_index = max(0, len(all_lines) - limit)
-            lines = all_lines[start_index:]
+            if limit and limit > 0:
+                start_index = max(0, len(all_lines) - limit)
+                lines = all_lines[start_index:]
+            else:
+                start_index = 0
+                lines = all_lines
         except Exception as exc:
             logger.warning(f"读取冒险日志失败: {path} {exc}")
             return []
@@ -662,6 +773,23 @@ class PlayerSaveRepository:
             except json.JSONDecodeError:
                 continue
         return logs
+
+    def _adventure_ordinal_for_log(self, raw_lines: list[str], target_index: int) -> int:
+        ordinal = 0
+        for index, line in enumerate(raw_lines):
+            if index > target_index:
+                break
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "adventure_summary":
+                ordinal = max(ordinal, int(item.get("adventure_to", 0) or 0))
+            elif item.get("type") == "adventure_diary":
+                ordinal += 1
+        return max(1, ordinal)
 
     def _read_last_adventure_summary(self, path: Path) -> dict[str, Any]:
         for item in reversed(self._read_recent_logs(path, limit=80)):

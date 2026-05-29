@@ -85,6 +85,11 @@ class AdventureDiaryApplicationService:
                 new_level,
                 card.level_exp_after,
             )
+            await self._maybe_compress_adventure_logs(
+                group_id=group_id,
+                user_id=user_id,
+                umo=umo,
+            )
             self._append_cameo_memories(
                 group_id=group_id,
                 user_id=user_id,
@@ -158,6 +163,38 @@ class AdventureDiaryApplicationService:
                 )
             except Exception as exc:
                 logger.warning(f"写入客串记忆失败: {npc_user_id} {exc}")
+
+    async def _maybe_compress_adventure_logs(
+        self,
+        *,
+        group_id: str,
+        user_id: str,
+        umo: str | None,
+    ) -> None:
+        interval = self.config_manager.get_diary_compress_interval()
+        compress_count = self.config_manager.get_diary_compress_count()
+        logs = self.save_repository.get_adventure_logs_for_compression(
+            group_id,
+            user_id,
+            interval=interval,
+            compress_count=compress_count,
+        )
+        if not logs:
+            return
+        try:
+            summary_text = await self.llm_analyzer.compress_adventure_logs(
+                logs=logs,
+                umo=umo,
+            )
+            self.save_repository.maybe_compress_adventure_logs(
+                group_id,
+                user_id,
+                interval=interval,
+                compress_count=compress_count,
+                summary_text=summary_text,
+            )
+        except Exception as exc:
+            logger.warning(f"压缩冒险日志失败，保留原始日志: {user_id} {exc}")
 
     @staticmethod
     def _merge_nearby_players(*groups: list[dict]) -> list[dict]:
