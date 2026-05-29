@@ -57,6 +57,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         profile: dict,
         state: dict,
         logs: list[dict],
+        cameo_memories: list[dict] | None = None,
+        nearby_players: list[dict] | None = None,
         user_id: str | None = None,
         nickname: str | None = None,
         umo: str | None = None,
@@ -66,6 +68,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             profile=profile,
             state=state,
             logs=logs,
+            cameo_memories=cameo_memories,
+            nearby_players=nearby_players,
             user_id=user_id,
             nickname=nickname,
         )
@@ -114,6 +118,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         profile: dict,
         state: dict,
         logs: list[dict],
+        cameo_memories: list[dict] | None,
+        nearby_players: list[dict] | None,
         user_id: str | None,
         nickname: str | None,
     ) -> str:
@@ -135,17 +141,29 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 world_book_text,
                 self.patch_book_engine.build_skill_prompt_text(scan_parts),
                 self.patch_book_engine.build_status_prompt_text(state),
+                self._format_nearby_players(nearby_players),
             ]
         )
+        cameo_memories_text = self._format_cameo_memories(cameo_memories)
+        prompt_template = self.editable_manager.get_prompt("adventure_diary_prompt")
+        logs_text = self._format_logs(logs)
+        if "{{cameo_memories_text}}" not in prompt_template:
+            logs_text = self._join_optional_prompt_parts(
+                [
+                    logs_text,
+                    "其他人与主角的交互：\n" + cameo_memories_text,
+                ]
+            )
 
-        return self.editable_manager.render_prompt(
-            "adventure_diary_prompt",
+        return self.editable_manager.render_text(
+            prompt_template,
             {
                 "player_name": nickname or card.get("target_name") or user_id or "unknown",
                 "current_level": current_level,
                 "profile_card_json": self._json_dump(card),
                 "state_json": self._json_dump(state),
-                "logs_text": self._format_logs(logs),
+                "logs_text": logs_text,
+                "cameo_memories_text": cameo_memories_text,
                 "action": action,
                 "supplement_text": supplement_text,
                 "world_book_text": supplement_text,
@@ -237,6 +255,47 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             str(item.get("action") or item.get("result") or item.get("title") or "")
             for item in logs[-8:]
         )
+
+    @staticmethod
+    def _format_cameo_memories(cameo_memories: list[dict] | None) -> str:
+        if not cameo_memories:
+            return "（暂无其他人与主角的交互。）"
+        lines = []
+        for index, item in enumerate(cameo_memories[-8:], start=1):
+            source_name = item.get("source_target_name", "")
+            title = item.get("title", "") or "其他人的记录"
+            encounter = item.get("encounter", "")
+            result = item.get("result", "")
+            region = item.get("region", "")
+            line = f"{index}. 来源：{source_name or '未知'}；标题：{title}"
+            if region:
+                line += f"；区域：{region}"
+            if encounter:
+                line += f"；遭遇：{encounter}"
+            if result:
+                line += f"；结算：{result}"
+            lines.append(line[:360])
+        return "\n".join(lines)
+
+    @classmethod
+    def _format_nearby_players(cls, nearby_players: list[dict] | None) -> str:
+        if not nearby_players:
+            return ""
+        return (
+            "该地区其他玩家：\n"
+            + cls._json_dump(cls._public_nearby_players(nearby_players))
+            + "\n以上玩家是同出生地区可客串 NPC。可以让他们以偶遇、传闻、同行、"
+            "交易、目击者或短暂协助的方式自然出现；不要替他们决定永久性重大"
+            "状态变化、死亡、失踪、残疾、重大财产损失或离开原本地区。"
+        )
+
+    @staticmethod
+    def _public_nearby_players(nearby_players: list[dict]) -> list[dict]:
+        return [
+            {key: value for key, value in item.items() if not str(key).startswith("_")}
+            for item in nearby_players
+            if isinstance(item, dict)
+        ]
 
     @staticmethod
     def _join_optional_prompt_parts(parts: list[str]) -> str:

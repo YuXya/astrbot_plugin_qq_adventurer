@@ -44,11 +44,20 @@ class AdventureDiaryApplicationService:
             profile = save_data.get("profile", {})
             state = save_data.get("state", {})
             logs = save_data.get("logs", [])
+            cameo_memories = save_data.get("cameo_memories", [])
+            card_data = profile.get("card", {}) if isinstance(profile, dict) else {}
+            nearby_players = self.save_repository.find_birth_region_npcs(
+                group_id,
+                user_id,
+                card_data.get("birth_region", "") if isinstance(card_data, dict) else "",
+            )
             analysis = await self.llm_analyzer.analyze_diary(
                 action_text=action_text,
                 profile=profile,
                 state=state,
                 logs=logs,
+                cameo_memories=cameo_memories,
+                nearby_players=nearby_players,
                 user_id=user_id,
                 nickname=nickname,
                 umo=umo,
@@ -66,6 +75,13 @@ class AdventureDiaryApplicationService:
                 card,
                 new_level,
                 card.level_exp_after,
+            )
+            self._append_cameo_memories(
+                group_id=group_id,
+                user_id=user_id,
+                source_target_name=card.target_name,
+                card=card,
+                nearby_players=nearby_players,
             )
 
             image_path, _html = await self.card_generator.generate_diary_image_card(
@@ -95,3 +111,41 @@ class AdventureDiaryApplicationService:
                 text=f"异世界冒险日记生成失败：{exc}",
                 error=str(exc),
             )
+
+    def _append_cameo_memories(
+        self,
+        *,
+        group_id: str,
+        user_id: str,
+        source_target_name: str,
+        card,
+        nearby_players: list[dict],
+    ) -> None:
+        mention_text = f"{card.encounter}\n{card.result}"
+        for npc in nearby_players:
+            if not isinstance(npc, dict):
+                continue
+            npc_user_id = str(npc.get("_user_id") or "").strip()
+            npc_target_name = str(npc.get("target_name") or "").strip()
+            if not npc_user_id or not npc_target_name:
+                continue
+            if npc_target_name not in mention_text:
+                continue
+            try:
+                self.save_repository.append_cameo_memory(
+                    group_id,
+                    npc_user_id,
+                    {
+                        "source_group_id": str(group_id),
+                        "source_user_id": str(user_id),
+                        "source_target_name": source_target_name,
+                        "npc_target_name": npc_target_name,
+                        "encounter": card.encounter,
+                        "result": card.result,
+                        "region": card.region,
+                        "location": card.location,
+                        "title": card.title,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(f"写入客串记忆失败: {npc_user_id} {exc}")

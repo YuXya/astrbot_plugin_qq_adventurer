@@ -138,6 +138,10 @@ class PlayerSaveRepository:
                 user_dir / "adventure_log.jsonl",
                 limit=log_limit,
             ),
+            "cameo_memories": self._read_recent_cameo_memories(
+                user_dir / "cameo_memory.jsonl",
+                limit=12,
+            ),
         }
 
     def save_adventure_result(
@@ -206,6 +210,21 @@ class PlayerSaveRepository:
         with log_path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
+    def append_cameo_memory(
+        self,
+        group_id: str,
+        npc_user_id: str,
+        record: dict[str, Any],
+    ) -> None:
+        user_dir = self.get_user_dir(group_id, npc_user_id)
+        user_dir.mkdir(parents=True, exist_ok=True)
+        log_path = user_dir / "cameo_memory.jsonl"
+        payload = dict(record)
+        payload["type"] = "cameo_memory"
+        payload.setdefault("created_at", self._now_ms())
+        with log_path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
     def get_user_dir(self, group_id: str, user_id: str) -> Path:
         safe_group = self._safe_id(group_id)
         safe_user = self._safe_id(user_id)
@@ -247,6 +266,65 @@ class PlayerSaveRepository:
         safe_user = self._safe_id(user_id)
         return [item for item in self.list_saves() if item.get("user_id") == safe_user]
 
+    def find_birth_region_npcs(
+        self,
+        group_id: str,
+        user_id: str,
+        birth_region: str,
+    ) -> list[dict[str, Any]]:
+        region = str(birth_region or "").strip()
+        if not region:
+            return []
+
+        current_user = self._safe_id(user_id)
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return []
+
+        npcs: list[dict[str, Any]] = []
+        for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
+            if user_dir.name == current_user:
+                continue
+
+            profile = self._read_json(user_dir / "profile.json")
+            card = profile.get("card", {}) if isinstance(profile, dict) else {}
+            if not isinstance(card, dict):
+                continue
+            if str(card.get("birth_region") or "").strip() != region:
+                continue
+
+            target_name = str(
+                card.get("target_name") or profile.get("nickname") or user_dir.name
+            ).strip()
+            state = self._replace_protagonist_key(
+                self._read_json(user_dir / "state.json"),
+                target_name,
+            )
+            npcs.append(
+                {
+                    "_user_id": user_dir.name,
+                    "target_name": target_name,
+                    "race": card.get("race", ""),
+                    "class_name": card.get("class_name", ""),
+                    "appearance": card.get("appearance", ""),
+                    "personality": card.get("personality", ""),
+                    "talent": card.get("talent", ""),
+                    "birth_region": card.get("birth_region", ""),
+                    "birth_location": card.get("birth_location", ""),
+                    "stats": card.get("stats", {}),
+                    "likes": card.get("likes", []),
+                    "state": state,
+                    "last_adventure": self._read_last_adventure_summary(
+                        user_dir / "adventure_log.jsonl"
+                    ),
+                    "cameo_memories": self._read_recent_cameo_memories(
+                        user_dir / "cameo_memory.jsonl",
+                        limit=5,
+                    ),
+                }
+            )
+        return npcs
+
     def read_save_detail(self, group_id: str, user_id: str) -> dict[str, Any] | None:
         user_dir = self.get_user_dir(group_id, user_id)
         if not user_dir.exists():
@@ -257,6 +335,10 @@ class PlayerSaveRepository:
             "profile": self._read_json(user_dir / "profile.json"),
             "state": self._read_json(user_dir / "state.json"),
             "logs": self._read_recent_logs(user_dir / "adventure_log.jsonl", limit=80),
+            "cameo_memories": self._read_recent_cameo_memories(
+                user_dir / "cameo_memory.jsonl",
+                limit=80,
+            ),
         }
 
     def delete_adventure_log(self, group_id: str, user_id: str, log_index: int) -> bool:
@@ -350,6 +432,46 @@ class PlayerSaveRepository:
             except json.JSONDecodeError:
                 continue
         return logs
+
+    def _read_last_adventure_summary(self, path: Path) -> dict[str, Any]:
+        for item in reversed(self._read_recent_logs(path, limit=80)):
+            if item.get("type") != "adventure_diary":
+                continue
+            return {
+                "encounter": item.get("encounter", ""),
+                "result": item.get("result", ""),
+                "region": item.get("region", ""),
+                "location": item.get("location", ""),
+                "created_at": item.get("created_at", 0),
+            }
+        return {}
+
+    def _read_recent_cameo_memories(self, path: Path, limit: int = 5) -> list[dict[str, Any]]:
+        memories = [
+            {
+                "created_at": item.get("created_at", 0),
+                "source_target_name": item.get("source_target_name", ""),
+                "encounter": item.get("encounter", ""),
+                "result": item.get("result", ""),
+                "region": item.get("region", ""),
+                "location": item.get("location", ""),
+                "title": item.get("title", ""),
+            }
+            for item in self._read_recent_logs(path, limit=max(limit * 4, limit))
+            if item.get("type") == "cameo_memory"
+        ]
+        return memories[-limit:]
+
+    def _replace_protagonist_key(self, value: Any, target_name: str) -> Any:
+        if isinstance(value, dict):
+            replaced: dict[str, Any] = {}
+            for key, child in value.items():
+                next_key = target_name if key == "主角" else key
+                replaced[next_key] = self._replace_protagonist_key(child, target_name)
+            return replaced
+        if isinstance(value, list):
+            return [self._replace_protagonist_key(item, target_name) for item in value]
+        return value
 
     def _apply_state_patches(
         self,

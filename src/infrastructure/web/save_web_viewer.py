@@ -872,10 +872,12 @@ class SaveWebViewer:
         profile = detail.get("profile", {})
         state = detail.get("state", {})
         logs = detail.get("logs", [])
+        cameo_memories = detail.get("cameo_memories", [])
         card = profile.get("card", {}) if isinstance(profile, dict) else {}
         title_name = card.get("target_name") or profile.get("nickname") or user_id
         summary = self._player_summary_html(group_id, user_id, profile, state, card)
         log_cards = self._player_log_cards(group_id, user_id, logs, allow_delete=is_admin)
+        cameo_cards = self._player_cameo_memory_cards(cameo_memories)
         progress_overview = self._progress_overview_html(state)
         state_overview = self._state_overview_html(state)
         log_note = (
@@ -914,6 +916,15 @@ class SaveWebViewer:
                 </div>
               </div>
               <div class="log-list">{log_cards}</div>
+            </section>
+            <section class="detail-panel">
+              <div class="section-head">
+                <div>
+                  <h2>其他人与主角的交互</h2>
+                  <p class="muted">这里展示其他玩家日记里明确提到该角色的遭遇和结算。</p>
+                </div>
+              </div>
+              <div class="log-list">{cameo_cards}</div>
             </section>
             <section class="detail-grid raw-grid">
               <details class="raw-panel">
@@ -1081,6 +1092,48 @@ class SaveWebViewer:
                   {encounter_html}
                   <p class="log-result">{result}</p>
                   {changes_block}
+                </article>
+                """
+            )
+        return "\n".join(cards)
+
+    def _player_cameo_memory_cards(self, memories: list[dict[str, Any]]) -> str:
+        if not memories:
+            return "<p class=\"muted empty-state\">还没有其他人与主角的交互。</p>"
+
+        cards: list[str] = []
+        for display_index, memory in enumerate(reversed(memories), start=1):
+            title = self._e(memory.get("title") or "其他人与主角的交互")
+            source_name = self._e(memory.get("source_target_name") or "未知角色")
+            region = self._e(memory.get("region") or "")
+            location = self._e(memory.get("location") or "")
+            encounter = self._e(memory.get("encounter") or "")
+            result = self._e(memory.get("result") or "")
+            created_at = self._format_time(memory.get("created_at"))
+            region_html = f"<span>{region}</span>" if region else ""
+            location_html = f"<span>{location}</span>" if location else ""
+            encounter_html = (
+                f"<p class=\"log-action\">遭遇：{encounter}</p>"
+                if encounter
+                else ""
+            )
+            cards.append(
+                f"""
+                <article class="log-card cameo-card">
+                  <div class="log-card-head">
+                    <div>
+                      <span class="log-index">#{display_index}</span>
+                      <h3>{title}</h3>
+                    </div>
+                  </div>
+                  <div class="log-meta">
+                    <span>{self._e(created_at)}</span>
+                    <span>来源：{source_name}</span>
+                    {region_html}
+                    {location_html}
+                  </div>
+                  {encounter_html}
+                  <p class="log-result">{result}</p>
                 </article>
                 """
             )
