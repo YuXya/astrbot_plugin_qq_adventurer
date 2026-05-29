@@ -196,6 +196,12 @@
         "description": "公网访问地址",
         "default": "",
         "hint": "例如 http://你的服务器IP:8501。留空时会回复 http://127.0.0.1:8501。"
+      },
+      "public_path_prefix": {
+        "type": "string",
+        "description": "反代路径前缀",
+        "default": "",
+        "hint": "如果网页挂在子路径下，例如 /Games/AIBot/，这里填 /Games/AIBot；根路径反代则留空。"
       }
     }
   },

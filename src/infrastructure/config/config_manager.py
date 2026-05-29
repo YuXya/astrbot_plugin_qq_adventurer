@@ -93,3 +93,9 @@ class ConfigManager:
 
     def get_web_public_base_url(self) -> str:
         return str(self._get_group("web_viewer").get("public_base_url", "")).strip()
+
+    def get_web_public_path_prefix(self) -> str:
+        prefix = str(self._get_group("web_viewer").get("public_path_prefix", "")).strip()
+        if not prefix or prefix == "/":
+            return ""
+        return "/" + prefix.strip("/")

@@ -23,11 +23,13 @@ class SaveWebViewer:
         editable_manager,
         host: str = "0.0.0.0",
         port: int = 8501,
+        public_path_prefix: str = "",
     ):
         self.repository = repository
         self.editable_manager = editable_manager
         self.host = host
         self.port = int(port)
+        self.public_path_prefix = self._normalize_path_prefix(public_path_prefix)
         self.token = ""
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -42,18 +44,18 @@ class SaveWebViewer:
 
         self.token = secrets.token_urlsafe(24)
         app = web.Application()
-        app.router.add_get("/login", self._login_page)
-        app.router.add_post("/login", self._login)
-        app.router.add_post("/logout", self._logout)
-        app.router.add_get("/", self._index)
-        app.router.add_get("/player", self._player_detail)
-        app.router.add_post("/player/delete", self._player_delete)
-        app.router.add_post("/player/log/delete", self._player_log_delete)
-        app.router.add_get("/editable", self._editable_index)
-        app.router.add_get("/editable/file", self._editable_file)
-        app.router.add_post("/editable/save", self._editable_save)
-        app.router.add_post("/editable/reset", self._editable_reset)
-        app.router.add_get("/health", self._health)
+        self._add_route(app, "GET", "/login", self._login_page)
+        self._add_route(app, "POST", "/login", self._login)
+        self._add_route(app, "POST", "/logout", self._logout)
+        self._add_route(app, "GET", "/", self._index)
+        self._add_route(app, "GET", "/player", self._player_detail)
+        self._add_route(app, "POST", "/player/delete", self._player_delete)
+        self._add_route(app, "POST", "/player/log/delete", self._player_log_delete)
+        self._add_route(app, "GET", "/editable", self._editable_index)
+        self._add_route(app, "GET", "/editable/file", self._editable_file)
+        self._add_route(app, "POST", "/editable/save", self._editable_save)
+        self._add_route(app, "POST", "/editable/reset", self._editable_reset)
+        self._add_route(app, "GET", "/health", self._health)
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -70,9 +72,15 @@ class SaveWebViewer:
         self.token = ""
         logger.info("异世界存档网页已关闭")
 
+    def _add_route(self, app: web.Application, method: str, path: str, handler) -> None:
+        app.router.add_route(method, path, handler)
+        prefixed_path = self._url(path)
+        if prefixed_path != path:
+            app.router.add_route(method, prefixed_path, handler)
+
     async def _login_page(self, request: web.Request) -> web.Response:
         if self._is_authorized(request):
-            raise web.HTTPFound("/")
+            raise self._redirect("/")
         return self._login_response()
 
     async def _login(self, request: web.Request) -> web.Response:
@@ -81,19 +89,19 @@ class SaveWebViewer:
         if qq_id != ADMIN_LOGIN_CODE:
             return self._login_response("登录失败，请检查输入。", status=401)
 
-        response = web.HTTPFound("/")
+        response = self._redirect("/")
         response.set_cookie(
             SESSION_COOKIE_NAME,
             self.token,
             httponly=True,
             samesite="Lax",
-            path="/",
+            path=self._cookie_path(),
         )
         raise response
 
     async def _logout(self, request: web.Request) -> web.Response:
-        response = web.HTTPFound("/login")
-        response.del_cookie(SESSION_COOKIE_NAME, path="/")
+        response = self._redirect("/login")
+        response.del_cookie(SESSION_COOKIE_NAME, path=self._cookie_path())
         raise response
 
     def _login_response(self, error: str = "", status: int = 200) -> web.Response:
@@ -105,7 +113,7 @@ class SaveWebViewer:
               <h1>异世界网页登录</h1>
               <p class="muted">请输入 QQ 号登录。</p>
               {error_html}
-              <form method="post" action="/login">
+              <form method="post" action="{self._url('/login')}">
                 <label for="qq-id">QQ号</label>
                 <input id="qq-id" name="qq_id" type="text" autocomplete="username" autofocus>
                 <div class="actions">
@@ -139,9 +147,9 @@ class SaveWebViewer:
             region = self._e(item.get("region", ""))
             location = self._e(item.get("location", ""))
             updated_at = self._format_time(item.get("updated_at"))
-            href = f"/player?group_id={group_id}&user_id={user_id}"
+            href = self._url(f"/player?group_id={group_id}&user_id={user_id}")
             delete_form = (
-                "<form class=\"inline-form\" method=\"post\" action=\"/player/delete\" "
+                f"<form class=\"inline-form\" method=\"post\" action=\"{self._url('/player/delete')}\" "
                 "onsubmit=\"return confirm('确定删除这个玩家存档？此操作不可恢复。');\">"
                 f"<input type=\"hidden\" name=\"group_id\" value=\"{group_id}\">"
                 f"<input type=\"hidden\" name=\"user_id\" value=\"{user_id}\">"
@@ -170,8 +178,8 @@ class SaveWebViewer:
             <h1>异世界存档</h1>
             <p class="muted">管理员页面。关闭网页命令会立即使当前网页登录态失效。</p>
             <p class="nav-actions">
-              <a class="button-link" href="/editable?category=world_background">编辑世界背景</a>
-              <a class="button-link" href="/editable?category=text_completion">编辑文本补全</a>
+              <a class="button-link" href="{self._url('/editable?category=world_background')}">编辑世界背景</a>
+              <a class="button-link" href="{self._url('/editable?category=text_completion')}">编辑文本补全</a>
             </p>
             <table>
               <thead>
@@ -210,7 +218,7 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/">返回存档列表</a></p>
+            <p><a href="{self._url('/')}">返回存档列表</a></p>
             <p class="muted">保存时会自动备份旧文件。世界书、技能书和状态书 default.json 会先做 JSON 校验。</p>
             {self._editable_table(description, rows)}
             """,
@@ -264,10 +272,10 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?category={self._e(back_category)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p><a href="{self._url(f'/editable?category={self._e(back_category)}')}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
             {warning_html}
-            <form method="post" action="/editable/save">
+            <form method="post" action="{self._url('/editable/save')}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <label for="note">资源说明 / 注释</label>
@@ -278,7 +286,7 @@ class SaveWebViewer:
                 <button type="submit">保存</button>
               </div>
             </form>
-            <form method="post" action="/editable/reset" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+            <form method="post" action="{self._url('/editable/reset')}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
@@ -336,9 +344,9 @@ class SaveWebViewer:
             title,
             f"""
             <h1>{self._e(title)}</h1>
-            <p><a href="/editable?category={self._e(back_category)}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p><a href="{self._url(f'/editable?category={self._e(back_category)}')}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
-            <form id="world-book-form" method="post" action="/editable/save">
+            <form id="world-book-form" method="post" action="{self._url('/editable/save')}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <input id="world-book-content" type="hidden" name="content" value="">
@@ -358,7 +366,7 @@ class SaveWebViewer:
                 <button type="submit">保存</button>
               </div>
             </form>
-            <form method="post" action="/editable/reset" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+            <form method="post" action="{self._url('/editable/reset')}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
               <button class="secondary" type="submit">恢复当前默认内容</button>
@@ -670,13 +678,13 @@ class SaveWebViewer:
                 f"""
                 <h1>保存失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}">返回编辑</a></p>
+                <p><a href="{self._url(f'/editable/file?id={quote(file_id, safe="")}&category={self._e(category)}')}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
+            self._url(f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}")
         )
 
     @staticmethod
@@ -755,13 +763,13 @@ class SaveWebViewer:
                 f"""
                 <h1>恢复默认失败</h1>
                 <p class="error">{self._e(exc)}</p>
-                <p><a href="/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}">返回编辑</a></p>
+                <p><a href="{self._url(f'/editable/file?id={quote(file_id, safe="")}&category={self._e(category)}')}">返回编辑</a></p>
                 """,
                 status=400,
             )
 
         raise web.HTTPFound(
-            f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
+            self._url(f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}")
         )
 
     async def _player_detail(self, request: web.Request) -> web.Response:
@@ -789,7 +797,7 @@ class SaveWebViewer:
             f"""
             <h1>{self._e(title_name)}</h1>
             <p class="nav-actions">
-              <a class="button-link secondary-link" href="/">返回列表</a>
+              <a class="button-link secondary-link" href="{self._url('/')}">返回列表</a>
             </p>
             {summary}
             {progress_overview}
@@ -813,7 +821,7 @@ class SaveWebViewer:
               </details>
             </section>
             {state_overview}
-            <form class="danger-zone" method="post" action="/player/delete" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
+            <form class="danger-zone" method="post" action="{self._url('/player/delete')}" onsubmit="return confirm('确定删除这个玩家存档？此操作不可恢复。');">
               <input type="hidden" name="group_id" value="{self._e(group_id)}">
               <input type="hidden" name="user_id" value="{self._e(user_id)}">
               <strong>危险操作</strong>
@@ -942,7 +950,7 @@ class SaveWebViewer:
             delete_button = ""
             if log_index >= 0 and raw_log_type == "adventure_diary":
                 delete_button = f"""
-                  <form class="inline-form" method="post" action="/player/log/delete" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
+                  <form class="inline-form" method="post" action="{self._url('/player/log/delete')}" onsubmit="return confirm('确定删除这条冒险记录？当前 state 不会自动回滚。');">
                     <input type="hidden" name="group_id" value="{self._e(group_id)}">
                     <input type="hidden" name="user_id" value="{self._e(user_id)}">
                     <input type="hidden" name="log_index" value="{log_index}">
@@ -1046,7 +1054,7 @@ class SaveWebViewer:
 
         self.repository.delete_adventure_log(group_id, user_id, log_index)
         raise web.HTTPFound(
-            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}"
+            self._url(f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}")
         )
 
     async def _player_delete(self, request: web.Request) -> web.Response:
@@ -1060,7 +1068,7 @@ class SaveWebViewer:
             raise web.HTTPBadRequest(text="missing group_id or user_id")
 
         self.repository.delete_player_save(group_id, user_id)
-        raise web.HTTPFound("/")
+        raise self._redirect("/")
 
     def _is_authorized(self, request: web.Request) -> bool:
         session_token = request.cookies.get(SESSION_COOKIE_NAME, "")
@@ -1071,7 +1079,31 @@ class SaveWebViewer:
         )
 
     def _forbidden(self) -> web.Response:
-        raise web.HTTPFound("/login")
+        raise self._redirect("/login")
+
+    def _redirect(self, path: str) -> web.HTTPFound:
+        return web.HTTPFound(self._url(path))
+
+    def _url(self, path: str) -> str:
+        if not path:
+            path = "/"
+        if not path.startswith("/"):
+            path = "/" + path
+        if not self.public_path_prefix:
+            return path
+        if path == "/":
+            return self.public_path_prefix + "/"
+        return self.public_path_prefix + path
+
+    def _cookie_path(self) -> str:
+        return self.public_path_prefix or "/"
+
+    @staticmethod
+    def _normalize_path_prefix(prefix: str) -> str:
+        text = str(prefix or "").strip()
+        if not text or text == "/":
+            return ""
+        return "/" + text.strip("/")
 
     def _html_response(
         self,
@@ -1081,8 +1113,8 @@ class SaveWebViewer:
         show_logout: bool = True,
     ) -> web.Response:
         logout_html = (
-            """
-            <form class="logout-form" method="post" action="/logout">
+            f"""
+            <form class="logout-form" method="post" action="{self._url('/logout')}">
               <button class="secondary compact-button" type="submit">退出</button>
             </form>
             """
@@ -1273,9 +1305,7 @@ class SaveWebViewer:
             label = self._e(item["label"])
             file_type = self._e(item["type"])
             note_preview = self._e(item.get("note_preview", ""))
-            href = (
-                f"/editable/file?id={quote(raw_file_id, safe='')}"
-            )
+            href = self._url(f"/editable/file?id={quote(raw_file_id, safe='')}")
             rows.append(
                 "<tr>"
                 f"<td><a href=\"{href}\">{label}</a></td>"

@@ -96,6 +96,7 @@ class QQAdventurer(Star):
             self.editable_manager,
             host=self.config_manager.get_web_host(),
             port=self.config_manager.get_web_port(),
+            public_path_prefix=self.config_manager.get_web_public_path_prefix(),
         )
         self._schedule_web_viewer_start()
 
@@ -303,7 +304,8 @@ class QQAdventurer(Star):
         if not base_url:
             port = self.config_manager.get_web_port()
             base_url = f"http://127.0.0.1:{port}"
-        return base_url.rstrip("/")
+        prefix = self.config_manager.get_web_public_path_prefix()
+        return f"{base_url.rstrip('/')}{prefix}"
 
     def _get_group_id_from_event(self, event: AstrMessageEvent) -> str | None:
         try:
