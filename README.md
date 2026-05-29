@@ -1,41 +1,41 @@
 # QQ 异世界转生人物卡
 
-这是一个 AstrBot 插件玩具版，用于跑通：
+这是一个 AstrBot 插件，用于在群聊中生成“异世界转生人物卡”和后续“冒险日记”。玩家可以先建档，再通过命令推进自己的异世界生活；插件会把角色档案、状态、冒险记录和其他玩家互动保存到本地存档中。
 
-群聊命令 -> 读取触发者最近发言 -> 获取 QQ 头像 -> 可选头像视觉转述 -> LLM 生成标准 JSON -> HTML 模板渲染 -> HTML 转图片 -> QQ 群发送图片
-
-## 命令
+## 玩家命令
 
 ```text
+/异世界帮助
 /异世界转生
-/异世界冒险 我要到森林里冒险
+/异世界转生 想成为会治疗魔法的小法师
+/异世界冒险
+/异世界冒险 去森林边缘采集草药
+```
+
+- `/异世界帮助`：显示玩家可用命令、新手用法和角色档案面板地址。
+- `/异世界转生`：创建角色档案。不写补充偏好时，会参考玩家最近群聊发言和 QQ 头像；写了补充偏好时，会按偏好建档并跳过群发言读取。
+- `/异世界冒险`：读取玩家自己的存档、状态、最近冒险日志、其他人与主角的交互、世界书/技能书/状态书，然后生成一次冒险日记。命令后可写本次行动；不写行动时由 LLM 根据当前状态自由生成。
+
+角色档案面板：
+
+```text
+https://www.youxiajiang.com/Games/AIBot/
+```
+
+创建完角色后，玩家可在面板中查看角色档案、状态、冒险记录和其他人与主角的交互。
+
+## 管理员命令
+
+```text
 /开启异世界网页
 /关闭异世界网页
 ```
 
-插件会以发送命令的群友为目标，尽量读取该群友最近的群聊发言，推断性格和表达气质，然后生成一张异世界转生人物卡。右上角会显示发送者 QQ 头像。
+异世界网页会随插件自动启动，默认监听 `8501`。管理员可使用开启/关闭命令手动控制网页服务。打开网页后输入 QQ 号登录；管理员登录码由代码中的 `ADMIN_LOGIN_CODE` 控制。
 
-如果开启头像转述并配置了支持图片输入的视觉 Provider，插件会先描述 QQ 头像中的画面特征，再让人物卡 LLM 保留这些核心外貌特征，并根据聊天风格扩写异世界服装、饰品、动作和气质。性格仍主要来自聊天记录。
+如果通过子路径反代，例如 `/Games/AIBot/`，请把 `web_viewer.public_path_prefix` 设置为 `/Games/AIBot`。如果需要让命令回复公网地址，请设置 `web_viewer.public_base_url`。
 
-异世界网页会随插件自动启动，默认监听 `8501`。`/开启异世界网页` 和 `/关闭异世界网页` 仅管理员可用；开启命令会确认网页在线并回复访问地址，打开后请输入 QQ 号登录。
-
-如果通过子路径反代，例如 `/Games/AIBot/`，请把 `web_viewer.public_path_prefix` 设为 `/Games/AIBot`，页面跳转、表单提交和登录 cookie 会自动使用这个路径前缀。
-
-`/异世界冒险` 不会读取群历史，只会读取玩家自己的转生存档、当前状态、最近冒险日志和世界书。命令后可以带行动文本；如果不带行动，LLM 会根据当前状态自由生成一次完整的小冒险。
-
-## 聊天记录路线
-
-参考项目不是只读取当前命令那一条消息：
-
-- QQ / OneBot：通过 `get_group_msg_history` 主动拉取群历史。
-- Telegram：平时拦截群消息，写入 AstrBot 的 `message_history_manager`，分析时再读取。
-- 分析前会把群消息清洗、过滤命令和机器人消息，再交给统计与 LLM 分析模块。
-
-本插件第一版只实现 QQ 够用路线：优先尝试 OneBot 的 `get_group_msg_history`，读取最近若干条群消息后筛选当前触发者的发言。读取失败时不会崩溃，会按玩具样例生成。
-
-聊天记录只在 `/异世界转生` 建档时使用。未来 `/异世界冒险` 会读取插件自己的玩家存档，不再读取群历史。
-
-## 存档与排队
+## 存档结构
 
 转生成功后会在 AstrBot 插件数据目录下创建：
 
@@ -43,118 +43,128 @@
 data/plugin_data/astrbot_plugin_qq_adventurer/saves/groups/{group_id}/users/{user_id}/
 ```
 
-其中包含：
+主要文件：
 
-- `profile.json`：转生人物卡、头像、昵称。
-- `state.json`：当前区域、具体地点、HP、MP、金币、背包、技能、任务等冒险状态。
-- `adventure_log.jsonl`：从转生开始后的冒险记录。
+- `index.json`：轻量索引，保存群号、角色名、当前区域和地点。列表和点名匹配优先读取它。
+- `profile.json`：转生人物卡、头像、昵称等固定档案。
+- `state.json`：当前区域、地点、等级、经验、HP、MP、金币、背包、技能、任务、flags 等冒险状态。
+- `adventure_log.jsonl`：冒险日志。每一行是一条独立 JSON 记录。
+- `cameo_memory.jsonl`：客串记忆。别人日记中明确提到该角色时，会在这里追加一条互动记忆。
 
-同一个群同一个 QQ 号的请求会串行排队处理，避免多条消息同时写坏同一份存档；不同玩家可以并行处理。
+同一个群同一个 QQ 号的请求会串行排队处理，避免并发写坏同一份存档；不同玩家可以并行处理。
+
+## 玩家互动
+
+插件支持两类“其他玩家作为 NPC”注入：
+
+- 同出生地区玩家：如果其他玩家的 `profile.card.birth_region` 与当前玩家相同，会作为同地区可客串 NPC 注入冒险日记 Prompt。
+- 行动文本点名玩家：如果玩家行动中提到同群某个角色名，例如 `/异世界冒险 去拯救洛洛`，即使双方不在同地区，也会把洛洛的信息注入 Prompt。
+
+点名匹配第一版采用简单规则：`target_name in action_text`。为了降低成本，插件会先扫描同群玩家的 `index.json`；只有命中名字后，才读取该玩家完整的 `profile.json`、`state.json`、最近冒险和客串记忆。
+
+如果最终生成的 `encounter` 或 `result` 中出现某个 NPC 的名字，插件会给该 NPC 追加一条 `cameo_memory.jsonl`。这样即使该玩家没有主动冒险，也会因为其他人的日记逐渐积累互动记忆。
 
 ## 冒险日记
 
-冒险日记卡要求 LLM 只返回 JSON，并渲染为独立的日记卡模板。当前只实际处理等级、区域和地点；`update.patches` 是为后续状态系统预留的结构：
+冒险日记要求 LLM 返回纯 JSON，并渲染成图片卡片。核心字段包括：
 
 ```json
 {
   "title": "异世界冒险日记",
-  "subtitle": "森林边境的一日远行",
-  "target_name": "群友名称",
-  "action": "我要到森林里冒险",
-  "date_label": "第 1 次冒险",
-  "region": "低语森林",
-  "location": "溪边临时营地",
-  "diary": "完整日记正文",
-  "encounter": "遭遇内容",
-  "result": "事件结算",
-  "level_change": "Lv.1->Lv.5",
+  "subtitle": "本次冒险副标题",
+  "target_name": "玩家角色名",
+  "action": "玩家本次行动",
+  "date_label": "第 N 次冒险",
+  "region": "本次冒险区域",
+  "location": "本次冒险地点",
+  "diary": "完整冒险日记正文",
+  "encounter": "本次主要遭遇",
+  "result": "本次事件结算",
   "stats": {"魔力": "A", "力量": "F", "敏捷": "C", "体质": "E"},
-  "changes": ["获得物品：小浆果", "采集熟练度 +10%"],
+  "changes": ["获得物品", "技能熟练度提升"],
   "footer": "底部说明",
   "update": {
-    "analysis": "本次在森林中行动并练习采集。",
+    "analysis": "状态更新依据",
     "patches": [
-      { "op": "replace", "path": "/region", "value": "低语森林" },
-      { "op": "replace", "path": "/location", "value": "溪边临时营地" },
-      { "op": "delta", "path": "/skills/采集/proficiency", "value": 10 }
+      {"op": "delta", "path": "/主角/等级/经验", "value": 20}
     ]
   }
 }
 ```
 
-代码会把等级限制在 `1..100`，并把冒险结果追加到 `adventure_log.jsonl`。技能熟练度 patch 暂时只要求 LLM 输出，不会自动应用。
+当前代码会处理等级、等级经验、区域、地点，并追加日志。`update.patches` 还会用于技能、状态等嵌套进度；经验满 100 后自动升级。
 
-## 头像与外貌
+## 世界书、技能书和状态书
 
+管理员网页中可编辑三类世界背景资源：
+
+- `world_book/default.json`：公共世界设定。
+- `skill_book/default.json`：技能成长提示和默认 patch 路径。
+- `status_book/default.json`：可觉醒状态、已有状态说明和状态成长提示。
+
+这些资源支持：
+
+- 可视化编辑条目。
+- 编辑源码。
+- 导出 JSON。
+- 导入 JSON。
+
+保存和导入时会进行 JSON 校验。
+
+## 存档网页
+
+网页面板支持：
+
+- 查看玩家列表。
+- 查看角色档案、状态概览、成长进度。
+- 查看冒险记录。
+- 查看“其他人与主角的交互”。
+- 管理员删除玩家存档或删除单条冒险日志。
+- 管理员编辑、导出、导入玩家存档源码。
+
+玩家存档源码支持以下文件：
+
+- `index.json`
+- `profile.json`
+- `state.json`
+- `adventure_log.jsonl`
+- `cameo_memory.jsonl`
+
+`.json` 文件保存前必须是 JSON 对象；`.jsonl` 文件保存前要求每一行都是 JSON 对象。导入或源码保存时会先备份旧文件。
+
+## 头像与聊天记录
+
+- `/异世界转生` 不写补充偏好时，会尝试读取触发者最近群聊发言。
+- 写了补充偏好时，不读取群发言，直接按偏好建档。
 - QQ 头像 URL 由发送者 QQ 号生成。
-- 头像转述默认关闭。
-- 开启 `vision.enable_avatar_caption` 后，需要在 `vision.vision_provider_id` 选择支持图片输入的 Provider。
-- 头像转述失败时，只跳过头像外貌参考，不影响卡片生成。
-- `appearance` 是幻想角色设定，不声称是真实用户外貌。
+- 头像视觉转述默认关闭；开启 `vision.enable_avatar_caption` 后，需要选择支持图片输入的视觉 Provider。
+- 头像转述失败不会中断流程，只会跳过头像外貌参考。
 
-## JSON 输出格式
+## 配置项
 
-LLM 被要求只返回：
-
-```json
-{
-  "title": "异世界转生人物卡",
-  "subtitle": "一句副标题",
-  "target_name": "群友名称",
-  "race": "转生种族",
-  "class_name": "异世界职阶",
-  "appearance": "保留头像核心特征，并根据聊天风格扩写出的异世界可爱外貌设定",
-  "personality": "根据聊天记录推断出的性格",
-  "talent": "一个和聊天风格有关的异世界天赋",
-  "birth_description": "角色直接在异世界醒来的出生点和周围情况描述",
-  "birth_region": "醒来地点所在的大区域",
-  "birth_location": "醒来时所在的具体地点",
-  "stats": {
-    "魔力": "A",
-    "力量": "F",
-    "敏捷": "C",
-    "体质": "E"
-  },
-  "likes": ["喜欢物1", "喜欢物2", "喜欢物3"],
-  "quote": "一句符合该角色的可爱台词",
-  "footer": "一句底部说明"
-}
-```
-
-代码里仍然保留双重提示约束：
-
-- system prompt 放人格。
-- user prompt 再重复一次人格和格式优先级。
-
-也就是：人格可以影响文风，但不能破坏 JSON 结构。
-
-## 配置
-
-- `llm.llm_provider_id`：人物卡生成 Provider，使用 `_special: select_provider`。
-- `vision.enable_avatar_caption`：是否启用头像图像转述，默认关闭。
-- `vision.vision_provider_id`：头像转述 Provider，使用 `_special: select_provider`，请选择支持图片输入的模型。
+- `llm.llm_provider_id`：人物卡和冒险日记生成 Provider。
+- `vision.enable_avatar_caption`：是否启用头像视觉转述。
+- `vision.vision_provider_id`：头像视觉转述 Provider。
 - `vision.avatar_caption_prompt`：头像转述提示词。
-- `analysis_features.use_plugin_specific_persona`：强制使用插件指定人格。
-- `analysis_features.plugin_specific_persona_id`：使用 `_special: select_persona` 选择人格。
+- `analysis_features.keep_original_persona`：是否保留原会话人格影响。
+- `analysis_features.use_plugin_specific_persona`：是否强制使用插件指定人格。
+- `analysis_features.plugin_specific_persona_id`：插件指定人格 ID。
 - `adventure.max_history_messages`：读取群历史消息上限。
-- `adventure.use_mock_data`：静态假数据模式，不调用人物卡 LLM。
-- `t2i_rendering`：HTML 转图片策略，第一轮失败后会尝试第二轮。
-- `web_viewer.host`：存档网页监听地址，默认 `0.0.0.0`。
-- `web_viewer.port`：存档网页端口，默认 `8501`。
-- `web_viewer.public_base_url`：回复给管理员的公网访问地址，例如 `http://你的服务器IP:8501`。
-- `web_viewer.public_path_prefix`：反代子路径前缀，例如 `/Games/AIBot`。根路径反代时留空。
+- `adventure.use_mock_data`：静态假数据模式。
+- `t2i_rendering`：HTML 转图片策略。
+- `performance.max_concurrent_t2i`：最大并发渲染数。
+- `web_viewer.host`：网页监听地址，默认 `0.0.0.0`。
+- `web_viewer.port`：网页端口，默认 `8501`。
+- `web_viewer.public_base_url`：回复给管理员的公网访问地址。
+- `web_viewer.public_path_prefix`：反代子路径前缀，例如 `/Games/AIBot`。
 
-## 测试
+## 测试建议
 
 1. 开启 `adventure.use_mock_data`。
-2. 在 QQ 群发送：
-
-```text
-/异世界转生
-```
-
-3. 确认机器人能发送图片卡片，右上角显示发送者 QQ 头像。
-4. 关闭 `use_mock_data`，确认 LLM 能返回 JSON 并正常渲染。
-5. 开启 `vision.enable_avatar_caption` 并选择视觉 Provider，确认 `appearance` 参考头像转述结果。
-6. 开启 `debug_mode` 后，可在插件数据目录查看最终 prompt 和 LLM 原始响应。
-7. 使用 `/异世界冒险 我要到森林里冒险`，确认能生成日记卡，并在 8501 网页看到日志。
+2. 在 QQ 群发送 `/异世界帮助`，确认能看到命令说明和档案面板地址。
+3. 发送 `/异世界转生`，确认能生成角色卡并创建存档。
+4. 发送 `/异世界冒险 去森林边缘采集草药`，确认能生成日记卡并更新 `state.json`、`index.json` 和 `adventure_log.jsonl`。
+5. 创建两个同出生地区玩家，确认日记 Prompt 能注入同地区 NPC。
+6. 使用 `/异世界冒险 去拯救某个角色名`，确认跨地区点名玩家也能被注入。
+7. 如果日记遭遇或结算里提到 NPC 名字，确认 NPC 的 `cameo_memory.jsonl` 有新增记录。
+8. 打开网页面板，确认能查看档案、冒险记录、其他人与主角的交互，并测试管理员导入/导出功能。
