@@ -116,6 +116,37 @@ class QQAdventurer(Star):
         except Exception as exc:
             logger.warning(f"异世界存档网页自动启动失败: {exc}")
 
+    @filter.command("异世界帮助", alias={"adventurer_help"})
+    async def adventurer_help(
+        self,
+        event: AstrMessageEvent,
+    ) -> AsyncGenerator:
+        """显示异世界插件的新手指引。用法：/异世界帮助"""
+        event.should_call_llm(False)
+        yield event.plain_result(
+            "\n".join(
+                [
+                    "异世界新手指引",
+                    "",
+                    "玩家可使用指令：",
+                    "1. /异世界转生",
+                    "   创建你的异世界角色档案。",
+                    "   不写补充偏好：参考你在群里的发言和 QQ 头像。",
+                    "   写了补充偏好：按你的偏好建档，不读取群发言。",
+                    "   示例：/异世界转生 想要成为白毛红瞳双马尾小萝莉",
+                    "",
+                    "2. /异世界冒险",
+                    "   根据你的角色档案、当前状态和最近记录，生成一次冒险日记。",
+                    "   可以直接自由冒险，也可以在命令后写本次行动。",
+                    "   示例：/异世界冒险 去森林战斗爽",
+                    "",
+                    "角色档案面板：",
+                    "https://www.youxiajiang.com/Games/AIBot/",
+                    "创建完角色后，可以在这里查看自己的角色档案、状态和冒险记录。",
+                ]
+            )
+        )
+
     @filter.command("异世界转生", alias={"reincarnate"})
     async def reincarnate(
         self,
