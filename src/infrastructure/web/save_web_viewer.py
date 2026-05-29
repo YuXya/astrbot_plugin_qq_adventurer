@@ -981,8 +981,8 @@ class SaveWebViewer:
                 continue
             # 标题一行，内容从下一行开始，内容中的回车保留为换行
             blocks.append(f"{title}\n{content}")
-        # 每个条目之间空一行
-        return "\n\n".join(blocks) + ("\n" if blocks else "")
+        # 每个条目之间用分隔线隔开
+        return "\n\n-----------------------------------------------\n\n".join(blocks) + ("\n" if blocks else "")
 
     @staticmethod
     def _single_line_text(value: object) -> str:
