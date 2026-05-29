@@ -537,9 +537,55 @@ class PlayerSaveRepository:
         if not user_dir.exists():
             return False
 
+        self.delete_cameo_memories_by_source(group_id, user_id)
         shutil.rmtree(user_dir)
         self._cleanup_empty_parent_dirs(user_dir)
         return True
+
+    def delete_cameo_memories_by_source(self, group_id: str, source_user_id: str) -> int:
+        source_user = self._safe_id(source_user_id)
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return 0
+
+        removed_count = 0
+        for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
+            log_path = user_dir / "cameo_memory.jsonl"
+            if not log_path.exists():
+                continue
+            try:
+                lines = log_path.read_text(encoding="utf-8").splitlines()
+            except Exception as exc:
+                logger.warning(f"读取客串记忆失败，跳过清理: {log_path} {exc}")
+                continue
+
+            kept_lines: list[str] = []
+            changed = False
+            for line in lines:
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    kept_lines.append(line)
+                    continue
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "cameo_memory"
+                    and self._safe_id(item.get("source_user_id", "")) == source_user
+                ):
+                    removed_count += 1
+                    changed = True
+                    continue
+                kept_lines.append(line)
+
+            if not changed:
+                continue
+            tmp_path = log_path.with_suffix(log_path.suffix + ".tmp")
+            text = "\n".join(kept_lines)
+            if text:
+                text += "\n"
+            tmp_path.write_text(text, encoding="utf-8")
+            tmp_path.replace(log_path)
+        return removed_count
 
     def _cleanup_empty_parent_dirs(self, user_dir: Path) -> None:
         for path in [user_dir.parent, user_dir.parent.parent]:

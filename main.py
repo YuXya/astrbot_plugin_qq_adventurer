@@ -140,12 +140,58 @@ class QQAdventurer(Star):
                     "   可以直接自由冒险，也可以在命令后写本次行动。",
                     "   示例：/异世界冒险 去森林战斗爽",
                     "",
+                    "3. /异世界存档删除",
+                    "   删除你在当前群的异世界存档，并清理其他玩家记忆中由你产生的客串记录。",
+                    "   为避免误删，需要输入：/异世界存档删除 确认",
+                    "",
                     "角色档案面板：",
                     "https://www.youxiajiang.com/Games/AIBot/",
                     "创建完角色后，可以在这里查看自己的角色档案、状态和冒险记录。",
                 ]
             )
         )
+
+    @filter.command("异世界存档删除", alias={"adventurer_delete_save"})
+    async def delete_adventurer_save(
+        self,
+        event: AstrMessageEvent,
+    ) -> AsyncGenerator:
+        """删除触发者在当前群的异世界存档。用法：/异世界存档删除 确认"""
+        event.should_call_llm(False)
+
+        group_id = self._get_group_id_from_event(event)
+        if not group_id:
+            yield event.plain_result("请在群聊中使用 /异世界存档删除。")
+            return
+
+        user_id = self._get_sender_id_from_event(event)
+        if not user_id:
+            yield event.plain_result("没有拿到你的 QQ 号，暂时不能删除玩家存档。")
+            return
+
+        confirm_text = self._extract_command_tail(event, "异世界存档删除")
+        if confirm_text != "确认":
+            yield event.plain_result(
+                "\n".join(
+                    [
+                        "这是不可逆操作，会删除你在当前群的异世界存档。",
+                        "同时会清理其他玩家记忆中由你产生的客串记录。",
+                        "确认删除请发送：/异世界存档删除 确认",
+                    ]
+                )
+            )
+            return
+
+        if await self.player_queue.is_locked(group_id, user_id):
+            yield event.plain_result("你的上一条异世界请求还在处理，删除请求已进入队列。")
+
+        async with self.player_queue.lock_for(group_id, user_id):
+            deleted = self.save_repository.delete_player_save(group_id, user_id)
+
+        if deleted:
+            yield event.plain_result("存档已删除，其他玩家记忆中由你产生的客串记录也已清理。")
+        else:
+            yield event.plain_result("没有找到你的异世界存档。")
 
     @filter.command("异世界转生", alias={"reincarnate"})
     async def reincarnate(
