@@ -961,7 +961,7 @@ class SaveWebViewer:
         if not isinstance(entries, list):
             return ""
 
-        lines: list[str] = []
+        blocks: list[str] = []
         indexed_entries = [
             (index, entry)
             for index, entry in enumerate(entries)
@@ -974,11 +974,14 @@ class SaveWebViewer:
             title = cls._single_line_text(
                 entry.get("title") or entry.get("id") or f"条目{index + 1}"
             )
-            content = cls._single_line_text(entry.get("content") or "")
+            # 保留内容中的换行，只去除首尾空白
+            content = str(entry.get("content") or "").strip()
             if not content:
                 continue
-            lines.append(f"{title}：{content}")
-        return "\n".join(lines) + ("\n" if lines else "")
+            # 标题一行，内容从下一行开始，内容中的回车保留为换行
+            blocks.append(f"{title}\n{content}")
+        # 每个条目之间空一行
+        return "\n\n".join(blocks) + ("\n" if blocks else "")
 
     @staticmethod
     def _single_line_text(value: object) -> str:
