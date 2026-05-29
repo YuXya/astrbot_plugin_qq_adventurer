@@ -60,10 +60,18 @@ class SaveWebViewer:
         self._add_route(app, "GET", "/player", self._player_detail)
         self._add_route(app, "POST", "/player/delete", self._player_delete)
         self._add_route(app, "POST", "/player/log/delete", self._player_log_delete)
+        self._add_route(app, "GET", "/player/file/source", self._player_file_source)
+        self._add_route(app, "POST", "/player/file/save", self._player_file_save)
+        self._add_route(app, "GET", "/player/file/export", self._player_file_export)
+        self._add_route(app, "POST", "/player/file/import", self._player_file_import)
         self._add_route(app, "GET", "/editable", self._editable_index)
         self._add_route(app, "GET", "/editable/file", self._editable_file)
         self._add_route(app, "POST", "/editable/save", self._editable_save)
         self._add_route(app, "POST", "/editable/reset", self._editable_reset)
+        self._add_route(app, "GET", "/editable/source", self._editable_source)
+        self._add_route(app, "POST", "/editable/source/save", self._editable_source_save)
+        self._add_route(app, "GET", "/editable/export", self._editable_export)
+        self._add_route(app, "POST", "/editable/import", self._editable_import)
         self._add_route(app, "GET", "/health", self._health)
 
         self._runner = web.AppRunner(app)
@@ -408,12 +416,26 @@ class SaveWebViewer:
             else "每个条目会在命中后作为世界背景补充注入 Prompt。"
         )
         storage_key = "qq_adventurer:book:open_entries:" + file_id.replace("/", ":")
+        source_url = self._url(
+            f"/editable/source?id={quote(file_id, safe='')}&category={self._e(back_category)}"
+        )
+        export_url = self._url(f"/editable/export?id={quote(file_id, safe='')}")
         return self._html_response(
             title,
             f"""
             <h1>{self._e(title)}</h1>
             <p><a href="{self._url(f'/editable?category={self._e(back_category)}')}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
+            <div class="source-actions">
+              <a class="button-link secondary-link" href="{source_url}">编辑源码</a>
+              <a class="button-link secondary-link" href="{export_url}">导出 JSON</a>
+              <form class="inline-import-form" method="post" action="{self._url('/editable/import')}" enctype="multipart/form-data">
+                <input type="hidden" name="id" value="{self._e(file_id)}">
+                <input type="hidden" name="category" value="{self._e(back_category)}">
+                <input name="import_file" type="file" accept=".json,application/json">
+                <button class="secondary compact-button" type="submit">导入 JSON</button>
+              </form>
+            </div>
             <form id="world-book-form" method="post" action="{self._url('/editable/save')}">
               <input type="hidden" name="id" value="{self._e(file_id)}">
               <input type="hidden" name="category" value="{self._e(back_category)}">
@@ -726,6 +748,104 @@ class SaveWebViewer:
             """,
         )
 
+    async def _editable_source(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        file_id = request.query.get("id", "")
+        if not self._is_structured_book_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable source file")
+        category = self._editable_back_category(request.query.get("category"), file_id)
+        content = self.editable_manager.read_text(file_id)
+        return self._source_editor_response(
+            title=f"编辑源码 - {file_id}",
+            back_url=self._url(
+                f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
+            ),
+            save_url=self._url("/editable/source/save"),
+            hidden_fields={
+                "id": file_id,
+                "category": category,
+            },
+            content=content,
+            file_name=file_id,
+            import_url=self._url("/editable/import"),
+            export_url=self._url(f"/editable/export?id={quote(file_id, safe='')}"),
+            accept=".json,application/json",
+        )
+
+    async def _editable_source_save(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        data = await request.post()
+        file_id = str(data.get("id", ""))
+        category = self._editable_back_category(str(data.get("category", "")), file_id)
+        content = str(data.get("content", ""))
+        if not self._is_structured_book_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable source file")
+        try:
+            self.editable_manager.write_json_book(file_id, content)
+        except Exception as exc:
+            return self._source_editor_response(
+                title=f"编辑源码 - {file_id}",
+                back_url=self._url(
+                    f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
+                ),
+                save_url=self._url("/editable/source/save"),
+                hidden_fields={"id": file_id, "category": category},
+                content=content,
+                file_name=file_id,
+                import_url=self._url("/editable/import"),
+                export_url=self._url(f"/editable/export?id={quote(file_id, safe='')}"),
+                accept=".json,application/json",
+                warning=str(exc),
+            )
+        raise web.HTTPFound(
+            self._url(f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}")
+        )
+
+    async def _editable_export(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        file_id = request.query.get("id", "")
+        if not self._is_structured_book_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable export file")
+        content = self.editable_manager.read_text(file_id)
+        return self._download_response(file_id.replace("/", "_"), content, "application/json")
+
+    async def _editable_import(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        data = await request.post()
+        file_id = str(data.get("id", ""))
+        category = self._editable_back_category(str(data.get("category", "")), file_id)
+        if not self._is_structured_book_file(file_id):
+            raise web.HTTPBadRequest(text="invalid editable import file")
+        content = await self._form_text_content(data)
+        try:
+            self.editable_manager.write_json_book(file_id, content)
+        except Exception as exc:
+            return self._source_editor_response(
+                title=f"导入失败 - {file_id}",
+                back_url=self._url(
+                    f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}"
+                ),
+                save_url=self._url("/editable/source/save"),
+                hidden_fields={"id": file_id, "category": category},
+                content=content,
+                file_name=file_id,
+                import_url=self._url("/editable/import"),
+                export_url=self._url(f"/editable/export?id={quote(file_id, safe='')}"),
+                accept=".json,application/json",
+                warning=str(exc),
+            )
+        raise web.HTTPFound(
+            self._url(f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}")
+        )
+
     async def _editable_save(self, request: web.Request) -> web.Response:
         if not self._is_admin(request):
             return self._forbidden()
@@ -857,6 +977,109 @@ class SaveWebViewer:
             self._url(f"/editable/file?id={quote(file_id, safe='')}&category={self._e(category)}")
         )
 
+    async def _player_file_source(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        group_id = request.query.get("group_id", "")
+        user_id = request.query.get("user_id", "")
+        file_name = request.query.get("file", "")
+        content = self.repository.read_player_source_file(group_id, user_id, file_name)
+        back_url = self._url(
+            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}"
+        )
+        query = (
+            f"group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}"
+            f"&file={quote(file_name, safe='')}"
+        )
+        return self._source_editor_response(
+            title=f"编辑存档源码 - {file_name}",
+            back_url=back_url,
+            save_url=self._url("/player/file/save"),
+            hidden_fields={
+                "group_id": group_id,
+                "user_id": user_id,
+                "file": file_name,
+            },
+            content=content,
+            file_name=file_name,
+            import_url=self._url("/player/file/import"),
+            export_url=self._url(f"/player/file/export?{query}"),
+            accept=".jsonl" if file_name.endswith(".jsonl") else ".json,application/json",
+        )
+
+    async def _player_file_save(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", ""))
+        user_id = str(data.get("user_id", ""))
+        file_name = str(data.get("file", ""))
+        content = str(data.get("content", ""))
+        back_url = self._url(
+            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}"
+        )
+        try:
+            self.repository.write_player_source_file(group_id, user_id, file_name, content)
+        except Exception as exc:
+            return self._source_editor_response(
+                title=f"编辑存档源码 - {file_name}",
+                back_url=back_url,
+                save_url=self._url("/player/file/save"),
+                hidden_fields={"group_id": group_id, "user_id": user_id, "file": file_name},
+                content=content,
+                file_name=file_name,
+                import_url=self._url("/player/file/import"),
+                export_url=self._url(
+                    f"/player/file/export?group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}&file={quote(file_name, safe='')}"
+                ),
+                accept=".jsonl" if file_name.endswith(".jsonl") else ".json,application/json",
+                warning=str(exc),
+            )
+        raise web.HTTPFound(back_url)
+
+    async def _player_file_export(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        group_id = request.query.get("group_id", "")
+        user_id = request.query.get("user_id", "")
+        file_name = request.query.get("file", "")
+        content = self.repository.read_player_source_file(group_id, user_id, file_name)
+        return self._download_response(file_name, content, "application/x-ndjson" if file_name.endswith(".jsonl") else "application/json")
+
+    async def _player_file_import(self, request: web.Request) -> web.Response:
+        if not self._is_admin(request):
+            return self._forbidden()
+
+        data = await request.post()
+        group_id = str(data.get("group_id", ""))
+        user_id = str(data.get("user_id", ""))
+        file_name = str(data.get("file", ""))
+        content = await self._form_text_content(data)
+        back_url = self._url(
+            f"/player?group_id={self._e(group_id)}&user_id={self._e(user_id)}"
+        )
+        try:
+            self.repository.write_player_source_file(group_id, user_id, file_name, content)
+        except Exception as exc:
+            return self._source_editor_response(
+                title=f"导入存档源码失败 - {file_name}",
+                back_url=back_url,
+                save_url=self._url("/player/file/save"),
+                hidden_fields={"group_id": group_id, "user_id": user_id, "file": file_name},
+                content=content,
+                file_name=file_name,
+                import_url=self._url("/player/file/import"),
+                export_url=self._url(
+                    f"/player/file/export?group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}&file={quote(file_name, safe='')}"
+                ),
+                accept=".jsonl" if file_name.endswith(".jsonl") else ".json,application/json",
+                warning=str(exc),
+            )
+        raise web.HTTPFound(back_url)
+
     async def _player_detail(self, request: web.Request) -> web.Response:
         session = self._session(request)
         if not session:
@@ -878,6 +1101,11 @@ class SaveWebViewer:
         summary = self._player_summary_html(group_id, user_id, profile, state, card)
         log_cards = self._player_log_cards(group_id, user_id, logs, allow_delete=is_admin)
         cameo_cards = self._player_cameo_memory_cards(cameo_memories)
+        source_file_panel = (
+            self._player_source_file_panel(group_id, user_id)
+            if is_admin
+            else ""
+        )
         progress_overview = self._progress_overview_html(state)
         state_overview = self._state_overview_html(state)
         log_note = (
@@ -937,9 +1165,57 @@ class SaveWebViewer:
               </details>
             </section>
             {state_overview}
+            {source_file_panel}
             {danger_zone}
             """,
         )
+
+    def _player_source_file_panel(self, group_id: str, user_id: str) -> str:
+        rows = []
+        for item in self.repository.list_player_source_files(group_id, user_id):
+            file_name = str(item.get("name", ""))
+            exists_text = "已存在" if item.get("exists") else "未创建"
+            accept = ".jsonl" if file_name.endswith(".jsonl") else ".json,application/json"
+            source_url = self._url(
+                f"/player/file/source?group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}&file={quote(file_name, safe='')}"
+            )
+            export_url = self._url(
+                f"/player/file/export?group_id={quote(group_id, safe='')}&user_id={quote(user_id, safe='')}&file={quote(file_name, safe='')}"
+            )
+            rows.append(
+                f"""
+                <tr>
+                  <td>{self._e(file_name)}</td>
+                  <td>{self._e(exists_text)}</td>
+                  <td>
+                    <a class="button-link secondary-link compact-link" href="{source_url}">编辑源码</a>
+                    <a class="button-link secondary-link compact-link" href="{export_url}">导出</a>
+                    <form class="inline-import-form" method="post" action="{self._url('/player/file/import')}" enctype="multipart/form-data">
+                      <input type="hidden" name="group_id" value="{self._e(group_id)}">
+                      <input type="hidden" name="user_id" value="{self._e(user_id)}">
+                      <input type="hidden" name="file" value="{self._e(file_name)}">
+                      <input name="import_file" type="file" accept="{self._e(accept)}">
+                      <button class="secondary compact-button" type="submit">导入</button>
+                    </form>
+                  </td>
+                </tr>
+                """
+            )
+        body = "\n".join(rows)
+        return f"""
+            <section class="detail-panel">
+              <div class="section-head">
+                <div>
+                  <h2>存档源码</h2>
+                  <p class="muted">管理员可编辑、导出或导入该玩家目录下的 JSON / JSONL 源文件。保存前会校验格式。</p>
+                </div>
+              </div>
+              <table class="source-table">
+                <thead><tr><th>文件</th><th>状态</th><th>操作</th></tr></thead>
+                <tbody>{body}</tbody>
+              </table>
+            </section>
+        """
 
     def _player_summary_html(
         self,
@@ -1319,6 +1595,75 @@ class SaveWebViewer:
             return ""
         return "/" + text.strip("/")
 
+    def _source_editor_response(
+        self,
+        *,
+        title: str,
+        back_url: str,
+        save_url: str,
+        hidden_fields: dict[str, str],
+        content: str,
+        file_name: str,
+        import_url: str,
+        export_url: str,
+        accept: str,
+        warning: str = "",
+    ) -> web.Response:
+        hidden_html = "\n".join(
+            f'<input type="hidden" name="{self._e(key)}" value="{self._e(value)}">'
+            for key, value in hidden_fields.items()
+        )
+        warning_html = f'<p class="error">{self._e(warning)}</p>' if warning else ""
+        return self._html_response(
+            title,
+            f"""
+            <h1>{self._e(title)}</h1>
+            <p><a href="{back_url}">返回</a></p>
+            <p class="muted">{self._e(file_name)}</p>
+            {warning_html}
+            <div class="source-actions">
+              <a class="button-link secondary-link" href="{export_url}">导出</a>
+              <form class="inline-import-form" method="post" action="{import_url}" enctype="multipart/form-data">
+                {hidden_html}
+                <input name="import_file" type="file" accept="{self._e(accept)}">
+                <button class="secondary compact-button" type="submit">导入</button>
+              </form>
+            </div>
+            <form method="post" action="{save_url}">
+              {hidden_html}
+              <label for="source-content">源码内容</label>
+              <textarea id="source-content" class="source-editor" name="content" spellcheck="false">{self._e(content)}</textarea>
+              <div class="actions">
+                <button type="submit">保存源码</button>
+              </div>
+            </form>
+            """,
+        )
+
+    async def _form_text_content(self, data: Any) -> str:
+        file_field = data.get("import_file")
+        if file_field is not None and getattr(file_field, "filename", ""):
+            raw = file_field.file.read()
+            if isinstance(raw, str):
+                return raw
+            return raw.decode("utf-8-sig")
+        return str(data.get("content") or data.get("import_content") or "")
+
+    def _download_response(
+        self,
+        filename: str,
+        content: str,
+        content_type: str,
+    ) -> web.Response:
+        safe_name = re.sub(r"[^0-9A-Za-z_.-]+", "_", filename).strip("._") or "download.json"
+        response = web.Response(
+            text=str(content),
+            content_type=content_type,
+            charset="utf-8",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        return response
+
     def _html_response(
         self,
         title: str,
@@ -1362,7 +1707,11 @@ class SaveWebViewer:
     .button-link:hover {{ text-decoration: none; background: #1a5fc9; }}
     .secondary-link {{ background: #59636e; }}
     .secondary-link:hover {{ background: #46515d; }}
+    .compact-link {{ padding: 6px 10px; font-size: 13px; }}
     .inline-form {{ display: inline; margin: 0; }}
+    .inline-import-form {{ display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; }}
+    .source-actions {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 18px; }}
+    .source-table td:last-child {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
     .compact-button {{ margin: 0; padding: 6px 10px; font-size: 13px; }}
     label {{ display: block; margin: 18px 0 8px; font-weight: 700; color: #303846; }}
     input[type="text"] {{ width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #c8d0dc; border-radius: 7px; font: inherit; background: #fbfdff; }}
@@ -1370,6 +1719,7 @@ class SaveWebViewer:
     textarea:focus, input:focus, select:focus {{ outline: none; border-color: #1f6feb !important; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.13); }}
     textarea.note-editor {{ min-height: 132px; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     textarea.content-editor {{ min-height: 58vh; }}
+    textarea.source-editor {{ min-height: 62vh; }}
     button {{ margin-top: 12px; padding: 9px 16px; border: 0; border-radius: 6px; background: #1f6feb; color: #fff; font-weight: 700; cursor: pointer; }}
     button.secondary {{ background: #59636e; }}
     button.danger {{ margin-top: 0; background: #b42318; }}

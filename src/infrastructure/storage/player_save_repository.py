@@ -16,6 +16,13 @@ from .state_progress import PROGRESS_KEYS
 
 
 class PlayerSaveRepository:
+    SOURCE_FILE_NAMES = {
+        "profile.json",
+        "state.json",
+        "adventure_log.jsonl",
+        "cameo_memory.jsonl",
+    }
+
     def __init__(self, plugin_name: str = "astrbot_plugin_qq_adventurer"):
         self.root_dir = StarTools.get_data_dir(plugin_name) / "saves"
 
@@ -341,6 +348,44 @@ class PlayerSaveRepository:
             ),
         }
 
+    def list_player_source_files(self, group_id: str, user_id: str) -> list[dict[str, Any]]:
+        user_dir = self.get_user_dir(group_id, user_id)
+        return [
+            {
+                "name": file_name,
+                "exists": (user_dir / file_name).exists(),
+                "kind": "jsonl" if file_name.endswith(".jsonl") else "json",
+            }
+            for file_name in sorted(self.SOURCE_FILE_NAMES)
+        ]
+
+    def read_player_source_file(
+        self,
+        group_id: str,
+        user_id: str,
+        file_name: str,
+    ) -> str:
+        path = self._player_source_path(group_id, user_id, file_name)
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8")
+
+    def write_player_source_file(
+        self,
+        group_id: str,
+        user_id: str,
+        file_name: str,
+        content: str,
+    ) -> None:
+        path = self._player_source_path(group_id, user_id, file_name)
+        self._validate_source_content(file_name, content)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            self._backup_source_file(path)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(str(content), encoding="utf-8")
+        tmp_path.replace(path)
+
     def delete_adventure_log(self, group_id: str, user_id: str, log_index: int) -> bool:
         user_dir = self.get_user_dir(group_id, user_id)
         log_path = user_dir / "adventure_log.jsonl"
@@ -472,6 +517,43 @@ class PlayerSaveRepository:
         if isinstance(value, list):
             return [self._replace_protagonist_key(item, target_name) for item in value]
         return value
+
+    def _player_source_path(self, group_id: str, user_id: str, file_name: str) -> Path:
+        if file_name not in self.SOURCE_FILE_NAMES:
+            raise ValueError(f"不允许编辑这个存档文件: {file_name}")
+        user_dir = self.get_user_dir(group_id, user_id)
+        root = user_dir.resolve()
+        target = (user_dir / file_name).resolve()
+        if root != target and root not in target.parents:
+            raise ValueError(f"非法存档源码路径: {target}")
+        return target
+
+    @staticmethod
+    def _validate_source_content(file_name: str, content: str) -> None:
+        text = str(content)
+        if file_name.endswith(".json"):
+            data = json.loads(text or "{}")
+            if not isinstance(data, dict):
+                raise ValueError(f"{file_name} 必须是 JSON 对象")
+            return
+        if file_name.endswith(".jsonl"):
+            for line_no, line in enumerate(text.splitlines(), start=1):
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                if not isinstance(data, dict):
+                    raise ValueError(f"{file_name} 第 {line_no} 行必须是 JSON 对象")
+            return
+        raise ValueError(f"不支持的存档源码类型: {file_name}")
+
+    @staticmethod
+    def _backup_source_file(path: Path) -> None:
+        try:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_path = path.with_name(f"{path.name}.{timestamp}.bak")
+            shutil.copy2(path, backup_path)
+        except Exception as exc:
+            logger.warning(f"备份存档源码失败: {path} {exc}")
 
     def _apply_state_patches(
         self,
