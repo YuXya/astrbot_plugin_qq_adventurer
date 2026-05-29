@@ -9,7 +9,12 @@ from urllib.parse import quote
 from aiohttp import web
 
 from ...utils.logger import logger
-from ..storage.state_progress import build_progress_items, build_state_display_items
+from ..storage.state_progress import (
+    build_progress_sections,
+    build_state_display_items,
+    level_display,
+    level_exp_percent,
+)
 
 
 ADMIN_LOGIN_CODE = "优夏酱世界第一可爱"
@@ -318,8 +323,16 @@ class SaveWebViewer:
         is_patch_book = file_id in {"skill_book/default.json", "status_book/default.json"}
         base_path_block = (
             f"""
-              <label for="book-base-path">默认 patch 基础路径</label>
-              <input id="book-base-path" type="text" value="{self._e(book.get('base_path') or '')}" spellcheck="false">
+              <div class="book-config-grid">
+                <div>
+                  <label for="book-display-name">展示名称</label>
+                  <input id="book-display-name" type="text" value="{self._e(book.get('display_name') or self._default_book_display_name(file_id))}" spellcheck="false">
+                </div>
+                <div>
+                  <label for="book-base-path">默认 patch 基础路径</label>
+                  <input id="book-base-path" type="text" value="{self._e(book.get('base_path') or '')}" spellcheck="false">
+                </div>
+              </div>
               <p class="muted">这个路径会发给 AI 作为 update.patches 的路径提示，不代表 JSON 文件实际存放路径。</p>
             """
             if is_patch_book
@@ -377,6 +390,7 @@ class SaveWebViewer:
               const addEntryButton = document.getElementById("add-entry");
               const form = document.getElementById("world-book-form");
               const contentInput = document.getElementById("world-book-content");
+              const displayNameInput = document.getElementById("book-display-name");
               const basePathInput = document.getElementById("book-base-path");
               const openStateStorageKey = "{self._e(storage_key)}";
               let draggingIndex = null;
@@ -387,6 +401,9 @@ class SaveWebViewer:
                 ...initialWorldBook,
                 entries: Array.isArray(initialWorldBook.entries) ? initialWorldBook.entries : [],
               }};
+              if (displayNameInput) {{
+                state.display_name = String(initialWorldBook.display_name || displayNameInput.value || "");
+              }}
               if (basePathInput) {{
                 state.base_path = String(initialWorldBook.base_path || basePathInput.value || "");
               }}
@@ -429,6 +446,9 @@ class SaveWebViewer:
               }}
 
               function syncFromDom() {{
+                if (displayNameInput) {{
+                  state.display_name = displayNameInput.value;
+                }}
                 if (basePathInput) {{
                   state.base_path = basePathInput.value;
                 }}
@@ -730,10 +750,20 @@ class SaveWebViewer:
             )
 
         book["version"] = book.get("version", 1)
+        if "display_name" in book:
+            book["display_name"] = str(book.get("display_name") or "")
         if "base_path" in book:
             book["base_path"] = str(book.get("base_path") or "")
         book["entries"] = normalized_entries
         return book
+
+    @staticmethod
+    def _default_book_display_name(file_id: str) -> str:
+        if file_id == "skill_book/default.json":
+            return "技能&熟练度"
+        if file_id == "status_book/default.json":
+            return "特殊状态"
+        return ""
 
     @staticmethod
     def _json_script_data(value: object) -> str:
@@ -865,7 +895,8 @@ class SaveWebViewer:
                 <h2>{self._e(card.get("title") or "异世界转生人物卡")}</h2>
                 <p class="subtitle">{self._e(card.get("subtitle") or "")}</p>
                 <div class="identity-line">
-                  <span>Lv.{self._e(state.get("level", 1))}</span>
+                  <span>{self._e(level_display(state))}</span>
+                  <span>等级经验 {self._e(level_exp_percent(state))}%</span>
                   <span>{self._e(card.get("race") or "未知种族")}</span>
                   <span>{self._e(card.get("class_name") or "未知职阶")}</span>
                   <span>{self._e(state.get("region") or "未知区域")}</span>
@@ -890,6 +921,7 @@ class SaveWebViewer:
                   <div><span>HP</span><strong>{self._e(state.get("hp", 100))}</strong></div>
                   <div><span>MP</span><strong>{self._e(state.get("mp", 100))}</strong></div>
                   <div><span>金币</span><strong>{self._e(state.get("gold", 0))}</strong></div>
+                  <div><span>等级经验</span><strong>{self._e(level_exp_percent(state))}%</strong></div>
                   <div><span>创建</span><strong>{self._e(created_at)}</strong></div>
                   <div><span>更新</span><strong>{self._e(updated_at)}</strong></div>
                 </div>
@@ -985,11 +1017,36 @@ class SaveWebViewer:
         return "\n".join(cards)
 
     def _progress_overview_html(self, state: dict[str, Any]) -> str:
-        items = build_progress_items(state, limit=16)
+        sections = build_progress_sections(
+            state,
+            self.editable_manager.read_book_base_path(
+                "skill_book/default.json",
+                "/主角/技能/技能名/",
+            ),
+            self.editable_manager.read_book_base_path(
+                "status_book/default.json",
+                "/主角/状态/状态名/",
+            ),
+            limit=16,
+        )
+        skill_title = self.editable_manager.read_book_display_name(
+            "skill_book/default.json",
+            "技能&熟练度",
+        )
+        status_title = self.editable_manager.read_book_display_name(
+            "status_book/default.json",
+            "特殊状态",
+        )
+        return (
+            self._progress_panel_html(skill_title, sections.skill_items)
+            + self._progress_panel_html(status_title, sections.status_items)
+        )
+
+    def _progress_panel_html(self, title: str, items: list[Any]) -> str:
         if not items:
-            return """
+            return f"""
             <section class="detail-panel progress-overview-panel">
-              <h2>状态进度</h2>
+              <h2>{self._e(title)}</h2>
               <p class="muted empty-state">暂无可展示的经验进度。</p>
             </section>
             """
@@ -1012,7 +1069,7 @@ class SaveWebViewer:
         )
         return f"""
             <section class="detail-panel progress-overview-panel">
-              <h2>状态进度</h2>
+              <h2>{self._e(title)}</h2>
               <div class="progress-list">{rows}</div>
             </section>
         """
@@ -1168,6 +1225,7 @@ class SaveWebViewer:
     .world-book-toolbar {{ display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin: 16px 0 8px; padding: 10px 12px; border: 1px solid #d9e1eb; border-radius: 8px; background: rgba(255,255,255,0.86); box-shadow: 0 6px 14px rgba(31, 41, 55, 0.05); }}
     .world-book-toolbar h2 {{ margin: 0 0 3px; }}
     .world-book-toolbar p {{ margin: 0; }}
+    .book-config-grid {{ display: grid; grid-template-columns: minmax(180px, .72fr) minmax(260px, 1.28fr); gap: 12px; align-items: start; }}
     #world-book-entries {{ display: grid; gap: 6px; }}
     .world-entry {{ margin: 0; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; box-shadow: 0 3px 10px rgba(31, 41, 55, 0.04); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
     .world-entry.dragging {{ opacity: .45; transform: scale(.995); }}
@@ -1248,7 +1306,7 @@ class SaveWebViewer:
     @media (max-width: 900px) {{ .state-overview-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
     @media (max-width: 900px) {{ .detail-grid, .raw-grid {{ grid-template-columns: 1fr; }} }}
     @media (max-width: 560px) {{ .state-overview-grid {{ grid-template-columns: 1fr; }} }}
-    @media (max-width: 720px) {{ .world-entry-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} .hero-card {{ align-items: flex-start; }} .log-card-head {{ flex-direction: column; }} }}
+    @media (max-width: 720px) {{ .world-entry-grid, .book-config-grid {{ grid-template-columns: 1fr; }} .world-book-toolbar {{ flex-direction: column; }} .world-entry-head {{ flex-wrap: wrap; }} .hero-card {{ align-items: flex-start; }} .log-card-head {{ flex-direction: column; }} }}
     pre {{ overflow: auto; padding: 14px; background: #111827; color: #d1e7dd; border-radius: 6px; line-height: 1.45; }}
   </style>
 </head>

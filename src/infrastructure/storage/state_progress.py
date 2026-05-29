@@ -17,21 +17,59 @@ class ProgressItem:
     percent: int
 
 
+@dataclass(frozen=True)
+class ProgressSections:
+    skill_items: list[ProgressItem]
+    status_items: list[ProgressItem]
+
+
+@dataclass(frozen=True)
+class _CollectedProgress:
+    item: ProgressItem
+    path: tuple[str, ...]
+
+
 def build_progress_items(state: dict[str, Any], limit: int = 12) -> list[ProgressItem]:
     if not isinstance(state, dict):
         return []
-    items: list[ProgressItem] = []
-    if "level_exp" in state or "level" in state:
-        items.append(
-            ProgressItem(
-                label="冒险等级",
-                level=_int_value(state.get("level"), 1),
-                value=_clamp_progress(state.get("level_exp")),
-                percent=_clamp_progress(state.get("level_exp")),
-            )
-        )
-    _collect_progress_items(state, [], items)
+    items = [collected.item for collected in _collect_progress_items(state)]
     return items[:limit]
+
+
+def build_progress_sections(
+    state: dict[str, Any],
+    skill_base_path: str,
+    status_base_path: str,
+    limit: int = 12,
+) -> ProgressSections:
+    if not isinstance(state, dict):
+        return ProgressSections([], [])
+
+    skill_pattern = _base_path_pattern(skill_base_path)
+    status_pattern = _base_path_pattern(status_base_path)
+    skill_items: list[ProgressItem] = []
+    status_items: list[ProgressItem] = []
+
+    for collected in _collect_progress_items(state):
+        parent_path = collected.path[:-1]
+        skill_label = _matched_label(parent_path, skill_pattern)
+        if skill_label is not None:
+            skill_items.append(_with_label(collected.item, skill_label))
+            continue
+
+        status_label = _matched_label(parent_path, status_pattern)
+        if status_label is not None:
+            status_items.append(_with_label(collected.item, status_label))
+
+    return ProgressSections(skill_items[:limit], status_items[:limit])
+
+
+def level_display(state: dict[str, Any]) -> str:
+    return f"{_int_value(state.get('level'), 1)}级"
+
+
+def level_exp_percent(state: dict[str, Any]) -> int:
+    return _clamp_progress(state.get("level_exp"))
 
 
 def build_state_display_items(state: dict[str, Any], limit: int = 24) -> list[tuple[str, str]]:
@@ -62,11 +100,12 @@ def state_label(label: str) -> str:
 
 def _collect_progress_items(
     value: object,
-    path: list[str],
-    items: list[ProgressItem],
-) -> None:
+    path: list[str] | None = None,
+) -> list[_CollectedProgress]:
+    path = path or []
+    items: list[_CollectedProgress] = []
     if not isinstance(value, dict):
-        return
+        return items
     for key, child in value.items():
         key_text = str(key)
         if key_text in HIDDEN_STATE_KEYS:
@@ -76,16 +115,20 @@ def _collect_progress_items(
         child_path = [*path, key_text]
         if key_text in PROGRESS_KEYS:
             items.append(
-                ProgressItem(
-                    label=_progress_label(path),
-                    level=_progress_level(value),
-                    value=_clamp_progress(child),
-                    percent=_clamp_progress(child),
+                _CollectedProgress(
+                    item=ProgressItem(
+                        label=_progress_label(path),
+                        level=_progress_level(value),
+                        value=_clamp_progress(child),
+                        percent=_clamp_progress(child),
+                    ),
+                    path=tuple(child_path),
                 )
             )
             continue
         if isinstance(child, dict):
-            _collect_progress_items(child, child_path, items)
+            items.extend(_collect_progress_items(child, child_path))
+    return items
 
 
 def _append_state_item(
@@ -119,6 +162,32 @@ def _progress_label(path: list[str]) -> str:
         if part not in {"主角", "技能", "状态", "特质"}:
             return state_label(part)
     return state_label(path[-1]) if path else "进度"
+
+
+def _base_path_pattern(base_path: str) -> tuple[str, ...]:
+    return tuple(part for part in str(base_path or "").strip("/").split("/") if part)
+
+
+def _matched_label(path: tuple[str, ...], pattern: tuple[str, ...]) -> str | None:
+    if not path or not pattern or len(path) != len(pattern):
+        return None
+
+    wildcard_index = len(pattern) - 1
+    for index, (actual, expected) in enumerate(zip(path, pattern)):
+        if index == wildcard_index:
+            continue
+        if actual != expected:
+            return None
+    return state_label(path[wildcard_index])
+
+
+def _with_label(item: ProgressItem, label: str) -> ProgressItem:
+    return ProgressItem(
+        label=label,
+        level=item.level,
+        value=item.value,
+        percent=item.percent,
+    )
 
 
 def _progress_level(parent: dict[str, Any]) -> int:

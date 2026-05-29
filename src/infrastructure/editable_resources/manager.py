@@ -79,6 +79,28 @@ class EditableResourceManager:
         json.loads(content)
         self.write_text(relative_path, content)
 
+    def read_book_base_path(self, relative_path: str, fallback: str) -> str:
+        try:
+            data = json.loads(self.read_text(relative_path))
+            if isinstance(data, dict):
+                base_path = str(data.get("base_path") or "").strip()
+                if base_path:
+                    return base_path
+        except Exception as exc:
+            logger.warning(f"读取书籍 base_path 失败: {relative_path} {exc}")
+        return fallback
+
+    def read_book_display_name(self, relative_path: str, fallback: str) -> str:
+        try:
+            data = json.loads(self.read_text(relative_path))
+            if isinstance(data, dict):
+                display_name = str(data.get("display_name") or "").strip()
+                if display_name:
+                    return display_name
+        except Exception as exc:
+            logger.warning(f"读取书籍 display_name 失败: {relative_path} {exc}")
+        return fallback
+
     def read_note(self, relative_path: str) -> str:
         if relative_path not in self._default_note_map():
             raise ValueError(f"资源没有说明: {relative_path}")

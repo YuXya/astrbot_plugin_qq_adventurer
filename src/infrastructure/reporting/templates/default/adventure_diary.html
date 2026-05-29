@@ -360,7 +360,8 @@
       </div>
       <div class="box">
         <div class="label">等级</div>
-        <div class="value">{{ card.level_change }}</div>
+        <div class="value">{{ level_label }}</div>
+        <div class="label">{{ level_exp_percent }}%</div>
       </div>
     </section>
 
@@ -400,11 +401,33 @@
 
     <footer class="footer">{{ card.footer }}</footer>
 
-    {% if progress_items %}
+    {% if skill_progress_items %}
     <section class="progress-panel">
-      <div class="section-title">状态进度</div>
+      <div class="section-title">{{ skill_progress_title }}</div>
       <div class="progress-list">
-        {% for item in progress_items %}
+        {% for item in skill_progress_items %}
+        <div class="progress-row">
+          <div class="progress-head">
+            <div class="progress-name">
+              <span>{{ item.label }}</span>
+              <span class="progress-level">Lv.{{ item.level }}</span>
+            </div>
+            <div class="progress-xp">{{ item.value }} <small>/ 100</small></div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: {{ item.percent }}%;"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if status_progress_items %}
+    <section class="progress-panel">
+      <div class="section-title">{{ status_progress_title }}</div>
+      <div class="progress-list">
+        {% for item in status_progress_items %}
         <div class="progress-row">
           <div class="progress-head">
             <div class="progress-name">

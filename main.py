@@ -69,7 +69,7 @@ class QQAdventurer(Star):
             self.diary_domain_service,
             self.editable_manager,
         )
-        self.report_generator = ReportGenerator(self.config_manager)
+        self.report_generator = ReportGenerator(self.config_manager, self.editable_manager)
         self.adventure_service = AdventureApplicationService(
             self.config_manager,
             self.domain_service,
