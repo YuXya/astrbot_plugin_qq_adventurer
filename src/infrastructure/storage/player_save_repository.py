@@ -17,6 +17,7 @@ from .state_progress import PROGRESS_KEYS
 
 class PlayerSaveRepository:
     SOURCE_FILE_NAMES = {
+        "index.json",
         "profile.json",
         "state.json",
         "adventure_log.jsonl",
@@ -71,6 +72,16 @@ class PlayerSaveRepository:
             self._atomic_write_json(state_path, state)
         else:
             self._touch_state_updated_at(state_path, now)
+            state = self._read_json(state_path)
+
+        self._write_player_index(
+            group_id=group_id,
+            user_id=user_id,
+            target_name=card.target_name,
+            region=state.get("region") or card.birth_region,
+            location=state.get("location") or card.birth_location,
+            updated_at=now,
+        )
 
         self.append_log(
             group_id,
@@ -187,6 +198,14 @@ class PlayerSaveRepository:
         self._apply_state_patches(state, card.update_patches)
         card.state_snapshot = self._to_jsonable(state)
         self._atomic_write_json(state_path, state)
+        self._write_player_index(
+            group_id=group_id,
+            user_id=user_id,
+            target_name=card.target_name,
+            region=state.get("region") or card.region,
+            location=state.get("location") or card.location,
+            updated_at=now,
+        )
 
         self.append_log(
             group_id,
@@ -248,23 +267,36 @@ class PlayerSaveRepository:
             if not users_dir.exists():
                 continue
             for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
-                profile = self._read_json(user_dir / "profile.json")
-                state = self._read_json(user_dir / "state.json")
+                index = self._read_json(user_dir / "index.json")
+                profile: dict[str, Any] = {}
+                state: dict[str, Any] = {}
+                if index:
+                    target_name = index.get("target_name", "")
+                    region = index.get("region", "")
+                    location = index.get("location", "")
+                    updated_at = int(index.get("updated_at", 0) or 0)
+                else:
+                    profile = self._read_json(user_dir / "profile.json")
+                    state = self._read_json(user_dir / "state.json")
+                    target_name = profile.get("card", {}).get("target_name", "")
+                    region = state.get("region", "")
+                    location = state.get("location", "")
+                    updated_at = max(
+                        int(profile.get("updated_at", 0) or 0),
+                        int(state.get("updated_at", 0) or 0),
+                    )
                 saves.append(
                     {
                         "group_id": group_dir.name,
                         "user_id": user_dir.name,
-                        "nickname": profile.get("nickname", ""),
-                        "target_name": profile.get("card", {}).get("target_name", ""),
+                        "nickname": index.get("target_name", "") if index else profile.get("nickname", ""),
+                        "target_name": target_name,
                         "race": profile.get("card", {}).get("race", ""),
                         "class_name": profile.get("card", {}).get("class_name", ""),
                         "level": state.get("level", 1),
-                        "region": state.get("region", ""),
-                        "location": state.get("location", ""),
-                        "updated_at": max(
-                            int(profile.get("updated_at", 0) or 0),
-                            int(state.get("updated_at", 0) or 0),
-                        ),
+                        "region": region,
+                        "location": location,
+                        "updated_at": updated_at,
                     }
                 )
         return saves
@@ -300,36 +332,38 @@ class PlayerSaveRepository:
             if str(card.get("birth_region") or "").strip() != region:
                 continue
 
-            target_name = str(
-                card.get("target_name") or profile.get("nickname") or user_dir.name
-            ).strip()
-            state = self._replace_protagonist_key(
-                self._read_json(user_dir / "state.json"),
-                target_name,
-            )
-            npcs.append(
-                {
-                    "_user_id": user_dir.name,
-                    "target_name": target_name,
-                    "race": card.get("race", ""),
-                    "class_name": card.get("class_name", ""),
-                    "appearance": card.get("appearance", ""),
-                    "personality": card.get("personality", ""),
-                    "talent": card.get("talent", ""),
-                    "birth_region": card.get("birth_region", ""),
-                    "birth_location": card.get("birth_location", ""),
-                    "stats": card.get("stats", {}),
-                    "likes": card.get("likes", []),
-                    "state": state,
-                    "last_adventure": self._read_last_adventure_summary(
-                        user_dir / "adventure_log.jsonl"
-                    ),
-                    "cameo_memories": self._read_recent_cameo_memories(
-                        user_dir / "cameo_memory.jsonl",
-                        limit=5,
-                    ),
-                }
-            )
+            npc = self._build_npc_package(user_dir, profile=profile, source="same_birth_region")
+            if npc:
+                npcs.append(npc)
+        return npcs
+
+    def find_mentioned_npcs(
+        self,
+        group_id: str,
+        user_id: str,
+        action_text: str,
+    ) -> list[dict[str, Any]]:
+        text = str(action_text or "").strip()
+        if not text:
+            return []
+
+        current_user = self._safe_id(user_id)
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return []
+
+        npcs: list[dict[str, Any]] = []
+        for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
+            if user_dir.name == current_user:
+                continue
+
+            index = self._read_json(user_dir / "index.json")
+            target_name = str(index.get("target_name") or "").strip()
+            if not target_name or target_name not in text:
+                continue
+            npc = self._build_npc_package(user_dir, source="mentioned_by_action")
+            if npc:
+                npcs.append(npc)
         return npcs
 
     def read_save_detail(self, group_id: str, user_id: str) -> dict[str, Any] | None:
@@ -385,6 +419,35 @@ class PlayerSaveRepository:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         tmp_path.write_text(str(content), encoding="utf-8")
         tmp_path.replace(path)
+        if file_name in {"index.json", "profile.json", "state.json"}:
+            self.rebuild_player_index(group_id, user_id)
+
+    def rebuild_player_index(self, group_id: str, user_id: str) -> None:
+        user_dir = self.get_user_dir(group_id, user_id)
+        profile = self._read_json(user_dir / "profile.json")
+        state = self._read_json(user_dir / "state.json")
+        index = self._read_json(user_dir / "index.json")
+        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        target_name = (
+            card.get("target_name")
+            or profile.get("nickname")
+            or index.get("target_name")
+            or user_id
+        )
+        updated_at = max(
+            int(profile.get("updated_at", 0) or 0),
+            int(state.get("updated_at", 0) or 0),
+            int(index.get("updated_at", 0) or 0),
+            self._now_ms(),
+        )
+        self._write_player_index(
+            group_id=group_id,
+            user_id=user_id,
+            target_name=target_name,
+            region=state.get("region") or index.get("region", ""),
+            location=state.get("location") or index.get("location", ""),
+            updated_at=updated_at,
+        )
 
     def delete_adventure_log(self, group_id: str, user_id: str, log_index: int) -> bool:
         user_dir = self.get_user_dir(group_id, user_id)
@@ -436,6 +499,26 @@ class PlayerSaveRepository:
             return
         state["updated_at"] = now
         self._atomic_write_json(state_path, state)
+
+    def _write_player_index(
+        self,
+        *,
+        group_id: str,
+        user_id: str,
+        target_name: object,
+        region: object,
+        location: object,
+        updated_at: int,
+    ) -> None:
+        index = {
+            "schema_version": 1,
+            "group_id": str(group_id),
+            "target_name": str(target_name or "").strip(),
+            "region": str(region or "").strip(),
+            "location": str(location or "").strip(),
+            "updated_at": int(updated_at or self._now_ms()),
+        }
+        self._atomic_write_json(self.get_user_dir(group_id, user_id) / "index.json", index)
 
     def _atomic_write_json(self, path: Path, data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -506,6 +589,47 @@ class PlayerSaveRepository:
             if item.get("type") == "cameo_memory"
         ]
         return memories[-limit:]
+
+    def _build_npc_package(
+        self,
+        user_dir: Path,
+        *,
+        profile: dict[str, Any] | None = None,
+        source: str,
+    ) -> dict[str, Any] | None:
+        profile = profile if isinstance(profile, dict) else self._read_json(user_dir / "profile.json")
+        card = profile.get("card", {}) if isinstance(profile, dict) else {}
+        if not isinstance(card, dict):
+            return None
+        target_name = str(
+            card.get("target_name") or profile.get("nickname") or user_dir.name
+        ).strip()
+        state = self._replace_protagonist_key(
+            self._read_json(user_dir / "state.json"),
+            target_name,
+        )
+        return {
+            "_user_id": user_dir.name,
+            "_source": source,
+            "target_name": target_name,
+            "race": card.get("race", ""),
+            "class_name": card.get("class_name", ""),
+            "appearance": card.get("appearance", ""),
+            "personality": card.get("personality", ""),
+            "talent": card.get("talent", ""),
+            "birth_region": card.get("birth_region", ""),
+            "birth_location": card.get("birth_location", ""),
+            "stats": card.get("stats", {}),
+            "likes": card.get("likes", []),
+            "state": state,
+            "last_adventure": self._read_last_adventure_summary(
+                user_dir / "adventure_log.jsonl"
+            ),
+            "cameo_memories": self._read_recent_cameo_memories(
+                user_dir / "cameo_memory.jsonl",
+                limit=5,
+            ),
+        }
 
     def _replace_protagonist_key(self, value: Any, target_name: str) -> Any:
         if isinstance(value, dict):

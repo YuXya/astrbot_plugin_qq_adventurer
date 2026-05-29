@@ -51,6 +51,15 @@ class AdventureDiaryApplicationService:
                 user_id,
                 card_data.get("birth_region", "") if isinstance(card_data, dict) else "",
             )
+            mentioned_players = self.save_repository.find_mentioned_npcs(
+                group_id,
+                user_id,
+                action_text,
+            )
+            nearby_players = self._merge_nearby_players(
+                nearby_players,
+                mentioned_players,
+            )
             analysis = await self.llm_analyzer.analyze_diary(
                 action_text=action_text,
                 profile=profile,
@@ -149,3 +158,30 @@ class AdventureDiaryApplicationService:
                 )
             except Exception as exc:
                 logger.warning(f"写入客串记忆失败: {npc_user_id} {exc}")
+
+    @staticmethod
+    def _merge_nearby_players(*groups: list[dict]) -> list[dict]:
+        merged: list[dict] = []
+        by_user_id: dict[str, dict] = {}
+        for group in groups:
+            for npc in group or []:
+                if not isinstance(npc, dict):
+                    continue
+                user_id = str(npc.get("_user_id") or "").strip()
+                if not user_id:
+                    continue
+                existing = by_user_id.get(user_id)
+                if existing is None:
+                    next_npc = dict(npc)
+                    source = str(next_npc.get("_source") or "").strip()
+                    next_npc["_sources"] = [source] if source else []
+                    by_user_id[user_id] = next_npc
+                    merged.append(next_npc)
+                    continue
+                source = str(npc.get("_source") or "").strip()
+                sources = existing.setdefault("_sources", [])
+                if source and source not in sources:
+                    sources.append(source)
+                if source == "mentioned_by_action":
+                    existing["_source"] = source
+        return merged

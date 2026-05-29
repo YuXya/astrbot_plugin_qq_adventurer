@@ -282,20 +282,37 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
         if not nearby_players:
             return ""
         return (
-            "该地区其他玩家：\n"
+            "相关其他玩家：\n"
             + cls._json_dump(cls._public_nearby_players(nearby_players))
-            + "\n以上玩家是同出生地区可客串 NPC。可以让他们以偶遇、传闻、同行、"
-            "交易、目击者或短暂协助的方式自然出现；不要替他们决定永久性重大"
-            "状态变化、死亡、失踪、残疾、重大财产损失或离开原本地区。"
+            + "\nsource 为“同出生地区”的玩家可作为自然客串 NPC；source 为“本次行动点名”的玩家"
+            "是玩家行动明确提到的目标、求助对象、拯救对象、寻找对象或远方联系人，即使不在同地区，"
+            "主角也可以根据对方位置尝试前往或围绕对方展开事件。不要替其他玩家决定永久性重大"
+            "状态变化、死亡、失踪、残疾或重大财产损失。"
         )
 
+    @classmethod
+    def _public_nearby_players(cls, nearby_players: list[dict]) -> list[dict]:
+        players: list[dict] = []
+        for item in nearby_players:
+            if not isinstance(item, dict):
+                continue
+            public_item = {
+                key: value
+                for key, value in item.items()
+                if not str(key).startswith("_")
+            }
+            public_item["source"] = cls._npc_source_label(item)
+            players.append(public_item)
+        return players
+
     @staticmethod
-    def _public_nearby_players(nearby_players: list[dict]) -> list[dict]:
-        return [
-            {key: value for key, value in item.items() if not str(key).startswith("_")}
-            for item in nearby_players
-            if isinstance(item, dict)
-        ]
+    def _npc_source_label(item: dict) -> str:
+        sources = item.get("_sources")
+        if isinstance(sources, list) and "mentioned_by_action" in sources:
+            return "本次行动点名"
+        if item.get("_source") == "mentioned_by_action":
+            return "本次行动点名"
+        return "同出生地区"
 
     @staticmethod
     def _join_optional_prompt_parts(parts: list[str]) -> str:
