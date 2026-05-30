@@ -309,6 +309,14 @@ class SaveWebViewer:
         label = meta.get("label", file_id) if meta else file_id
         title = f"编辑 {label}"
         if self._is_structured_book_file(file_id):
+            if file_id == "region_book/default.json":
+                return self._region_book_file_response(
+                    title,
+                    file_id,
+                    back_category,
+                    note,
+                    content,
+                )
             return self._world_book_file_response(
                 title,
                 file_id,
@@ -755,6 +763,569 @@ class SaveWebViewer:
             """,
         )
 
+    def _region_book_file_response(
+        self,
+        title: str,
+        file_id: str,
+        back_category: str,
+        note: str,
+        content: str,
+    ) -> web.Response:
+        try:
+            book = self._normalize_region_book(json.loads(content))
+        except Exception as exc:
+            return self._plain_editable_file_response(
+                title,
+                file_id,
+                back_category,
+                note,
+                content,
+                warning=f"区域书 JSON 解析失败，请先修复原始 JSON：{exc}",
+            )
+
+        book_json = self._json_script_data(book)
+        storage_key = "qq_adventurer:region_book:open_state"
+        source_url = self._url(
+            f"/editable/source?id={quote(file_id, safe='')}&category={self._e(back_category)}"
+        )
+        export_url = self._url(f"/editable/export?id={quote(file_id, safe='')}")
+        key_info_export_url = self._url(
+            f"/editable/export/key-info?id={quote(file_id, safe='')}"
+        )
+        return self._html_response(
+            title,
+            f"""
+            <h1>{self._e(title)}</h1>
+            <p><a href="{self._url(f'/editable?category={self._e(back_category)}')}">返回{self._e(self._editable_category_title(back_category))}</a></p>
+            <p class="muted">{self._e(file_id)}</p>
+            <p class="muted">区域书按地区划分条目。玩家当前区域命中的条目返回详细介绍，其他区域命中的条目返回简略介绍。min_level 为等级门槛。排序由网页上下位置决定。</p>
+            <div class="source-actions">
+              <a class="button-link secondary-link" href="{source_url}">编辑源码</a>
+              <a class="button-link secondary-link" href="{export_url}">导出 JSON</a>
+              <a class="button-link secondary-link" href="{key_info_export_url}">导出关键信息 TXT</a>
+              <form class="inline-import-form" method="post" action="{self._url('/editable/import')}" enctype="multipart/form-data">
+                <input type="hidden" name="id" value="{self._e(file_id)}">
+                <input type="hidden" name="category" value="{self._e(back_category)}">
+                <input name="import_file" type="file" accept=".json,application/json">
+                <button class="secondary compact-button" type="submit">导入 JSON</button>
+              </form>
+            </div>
+            <form id="region-book-form" method="post" action="{self._url('/editable/save')}">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
+              <input id="region-book-content" type="hidden" name="content" value="">
+              <label for="note">资源说明 / 注释</label>
+              <textarea id="note" class="note-editor" name="note" spellcheck="false">{self._e(note)}</textarea>
+
+              <div class="world-book-toolbar">
+                <div>
+                  <h2>区域列表</h2>
+                </div>
+                <button id="add-region" type="button">+ 添加区域</button>
+              </div>
+              <div id="region-book-regions"></div>
+              <div class="actions">
+                <button type="submit">保存</button>
+              </div>
+            </form>
+            <form method="post" action="{self._url('/editable/reset')}" onsubmit="return confirm('确定恢复为当前代码内置默认内容？旧文件会先自动备份。');">
+              <input type="hidden" name="id" value="{self._e(file_id)}">
+              <input type="hidden" name="category" value="{self._e(back_category)}">
+              <button class="secondary" type="submit">恢复当前默认内容</button>
+            </form>
+            <script>
+              const initialRegionBook = {book_json};
+              const regionsEl = document.getElementById("region-book-regions");
+              const addRegionButton = document.getElementById("add-region");
+              const rbForm = document.getElementById("region-book-form");
+              const rbContentInput = document.getElementById("region-book-content");
+              const rbStorageKey = "{self._e(storage_key)}";
+
+              const rbState = {{
+                ...initialRegionBook,
+                regions: Array.isArray(initialRegionBook.regions) ? initialRegionBook.regions : [],
+              }};
+
+              let rbDraggingRegionIdx = null;
+              let rbDraggingEntryIdx = null;
+              let rbDraggingRegionForEntry = null;
+              let rbOpenState = {{ regions: new Set(), entries: new Set() }};
+              let rbHasCapturedOpenState = false;
+
+              function rbRegionDefaults(index) {{
+                return {{
+                  id: `region_${{index + 1}}`,
+                  name: "",
+                  entries: [],
+                }};
+              }}
+
+              function rbEntryDefaults(index) {{
+                return {{
+                  id: `entry_${{index + 1}}`,
+                  title: "",
+                  enabled: true,
+                  recursive: true,
+                  strategy: "keyword",
+                  keys: [],
+                  min_level: 1,
+                  brief: "",
+                  content: "",
+                }};
+              }}
+
+              function rbNormalizeRegion(region, index) {{
+                return {{
+                  id: String(region.id || `region_${{index + 1}}`).trim(),
+                  name: String(region.name || ""),
+                  entries: Array.isArray(region.entries) ? region.entries.map((e, ei) => rbNormalizeEntry(e, ei)) : [],
+                }};
+              }}
+
+              function rbNormalizeEntry(entry, index) {{
+                const keys = Array.isArray(entry.keys)
+                  ? entry.keys
+                  : (typeof entry.keys === "string" ? [entry.keys] : []);
+                const minLevel = Number.parseInt(entry.min_level, 10);
+                return {{
+                  id: String(entry.id || `entry_${{index + 1}}`).trim(),
+                  title: String(entry.title || ""),
+                  enabled: entry.enabled !== false,
+                  recursive: entry.recursive !== false,
+                  strategy: entry.strategy === "always" ? "always" : "keyword",
+                  keys: keys.map((key) => String(key).trim()).filter(Boolean),
+                  min_level: Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1,
+                  brief: String(entry.brief || ""),
+                  content: String(entry.content || ""),
+                }};
+              }}
+
+              function rbSplitKeys(value) {{
+                return String(value || "")
+                  .split(/[\\n,，]/)
+                  .map((key) => key.trim())
+                  .filter(Boolean);
+              }}
+
+              function rbEscapeHtml(value) {{
+                return String(value)
+                  .replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+              }}
+
+              function rbEscapeAttr(value) {{
+                return rbEscapeHtml(value)
+                  .replace(/"/g, "&quot;")
+                  .replace(/'/g, "&#39;");
+              }}
+
+              function rbRegionKey(region, index) {{
+                return String(region.id || region.name || `region_${{index + 1}}`).trim();
+              }}
+
+              function rbEntryKey(entry, rIdx, eIdx) {{
+                return `${{rIdx}}_${{String(entry.id || entry.title || `entry_${{eIdx + 1}}`).trim()}}`;
+              }}
+
+              function rbCaptureOpenState() {{
+                rbHasCapturedOpenState = true;
+                rbOpenState.regions = new Set();
+                rbOpenState.entries = new Set();
+                regionsEl.querySelectorAll(".region-block").forEach((block, rIdx) => {{
+                  const rKey = block.dataset.regionKey;
+                  const rDetails = block.querySelector(":scope > details");
+                  if (rKey && rDetails && rDetails.open) rbOpenState.regions.add(rKey);
+                  block.querySelectorAll(".rb-entry").forEach((card, eIdx) => {{
+                    const eKey = card.dataset.entryKey;
+                    const eDetails = card.querySelector("details");
+                    if (eKey && eDetails && eDetails.open) rbOpenState.entries.add(eKey);
+                  }});
+                }});
+                rbPersistOpenState();
+              }}
+
+              function rbLoadOpenState() {{
+                try {{
+                  const raw = localStorage.getItem(rbStorageKey);
+                  if (!raw) return;
+                  const data = JSON.parse(raw);
+                  if (!data) return;
+                  if (Array.isArray(data.openRegions)) rbOpenState.regions = new Set(data.openRegions.map(String));
+                  if (Array.isArray(data.openEntries)) rbOpenState.entries = new Set(data.openEntries.map(String));
+                  rbHasCapturedOpenState = true;
+                }} catch (error) {{
+                  console.warn("failed to load region book open state", error);
+                }}
+              }}
+
+              function rbPersistOpenState() {{
+                try {{
+                  localStorage.setItem(rbStorageKey, JSON.stringify({{
+                    openRegions: Array.from(rbOpenState.regions),
+                    openEntries: Array.from(rbOpenState.entries),
+                  }}));
+                }} catch (error) {{
+                  console.warn("failed to save region book open state", error);
+                }}
+              }}
+
+              function rbSyncFromDom() {{
+                rbState.regions = Array.from(regionsEl.querySelectorAll(".region-block")).map((block, rIdx) => {{
+                  const region = rbNormalizeRegion(rbState.regions[rIdx] || {{}}, rIdx);
+                  region.id = block.querySelector("[data-field='region-id']").value;
+                  region.name = block.querySelector("[data-field='region-name']").value;
+                  region.entries = Array.from(block.querySelectorAll(".rb-entry")).map((card, eIdx) => rbNormalizeEntry({{
+                    id: card.querySelector("[data-field='id']").value,
+                    title: card.querySelector("[data-field='title']").value,
+                    enabled: card.querySelector("[data-field='enabled']").checked,
+                    recursive: card.querySelector("[data-field='recursive']").checked,
+                    strategy: card.querySelector("[data-field='strategy']").value,
+                    keys: rbSplitKeys(card.querySelector("[data-field='keys']").value),
+                    min_level: card.querySelector("[data-field='min_level']").value,
+                    brief: card.querySelector("[data-field='brief']").value,
+                    content: card.querySelector("[data-field='content']").value,
+                  }}, eIdx));
+                  return region;
+                }});
+              }}
+
+              function rbRenderRegions() {{
+                regionsEl.innerHTML = "";
+                rbState.regions.forEach((region, rIdx) => {{
+                  const norm = rbNormalizeRegion(region, rIdx);
+                  const rKey = rbRegionKey(norm, rIdx);
+                  const rIsOpen = rbHasCapturedOpenState && rbOpenState.regions.has(rKey);
+                  const regionEl = document.createElement("section");
+                  regionEl.className = "region-block";
+                  regionEl.dataset.regionKey = rKey;
+                  regionEl.dataset.regionIndex = rIdx;
+
+                  const entryCount = norm.entries.length;
+                  const summaryText = norm.name || norm.id || `区域 ${{rIdx + 1}}`;
+
+                  let entriesHtml = "";
+                  norm.entries.forEach((entry, eIdx) => {{
+                    const eNorm = rbNormalizeEntry(entry, eIdx);
+                    const eKey = rbEntryKey(eNorm, rIdx, eIdx);
+                    const eIsOpen = rbHasCapturedOpenState && rbOpenState.entries.has(eKey);
+                    const entrySummary = eNorm.title || eNorm.id || `条目 ${{eIdx + 1}}`;
+                    entriesHtml += `
+                      <div class="rb-entry" data-entry-key="${{rbEscapeAttr(eKey)}}" data-entry-index="${{eIdx}}">
+                        <details${{eIsOpen ? " open" : ""}}>
+                          <summary class="world-entry-head">
+                            <button class="drag-handle" type="button" data-action="drag-entry" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
+                            <span class="entry-title">${{rbEscapeHtml(entrySummary)}}</span>
+                            <label class="summary-check"><input data-field="enabled" type="checkbox"${{eNorm.enabled ? " checked" : ""}}> 启用</label>
+                            <label class="summary-check"><input data-field="recursive" type="checkbox"${{eNorm.recursive ? " checked" : ""}}> 允许递归</label>
+                            <span class="muted" style="margin-left:4px">Lv.${{eNorm.min_level}}</span>
+                            <button class="danger" type="button" data-action="delete-entry">删除</button>
+                          </summary>
+                          <div class="world-entry-body">
+                            <div class="world-entry-grid">
+                              <label class="compact-field"><span>ID</span><input data-field="id" type="text" value="${{rbEscapeAttr(eNorm.id)}}"></label>
+                              <label class="compact-field"><span>标题</span><input data-field="title" type="text" value="${{rbEscapeAttr(eNorm.title)}}"></label>
+                              <label class="compact-field"><span>等级门槛</span><input data-field="min_level" type="number" step="1" min="1" value="${{eNorm.min_level}}"></label>
+                              <label class="compact-field"><span>触发方式</span>
+                                <select data-field="strategy">
+                                  <option value="keyword"${{eNorm.strategy === "keyword" ? " selected" : ""}}>关键词命中</option>
+                                  <option value="always"${{eNorm.strategy === "always" ? " selected" : ""}}>总是注入</option>
+                                </select>
+                              </label>
+                            </div>
+                            <label class="block-field">关键词（支持中文逗号、英文逗号或换行分隔；触发方式为"总是注入"时可留空）
+                              <textarea data-field="keys" class="keys-editor" spellcheck="false">${{rbEscapeHtml(eNorm.keys.join("\\n"))}}</textarea>
+                            </label>
+                            <label class="block-field">简略介绍（其他区域命中时返回此内容）
+                              <textarea data-field="brief" class="entry-content-editor" spellcheck="false" style="height:60px">${{rbEscapeHtml(eNorm.brief)}}</textarea>
+                            </label>
+                            <label class="block-field">详细介绍（当前区域命中时返回此内容）
+                              <textarea data-field="content" class="entry-content-editor" spellcheck="false">${{rbEscapeHtml(eNorm.content)}}</textarea>
+                            </label>
+                          </div>
+                        </details>
+                      </div>
+                    `;
+                  }});
+
+                  regionEl.innerHTML = `
+                    <details${{rIsOpen ? " open" : ""}}>
+                      <summary class="world-entry-head region-head">
+                        <button class="drag-handle" type="button" data-action="drag-region" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
+                        <span class="entry-title">${{rbEscapeHtml(summaryText)}}</span>
+                        <span class="muted" style="margin-left:4px">(${{entryCount}} 个条目)</span>
+                        <button class="danger" type="button" data-action="delete-region">删除区域</button>
+                      </summary>
+                      <div class="region-body">
+                        <div class="world-entry-grid">
+                          <label class="compact-field"><span>区域 ID</span><input data-field="region-id" type="text" value="${{rbEscapeAttr(norm.id)}}"></label>
+                          <label class="compact-field"><span>区域名称</span><input data-field="region-name" type="text" value="${{rbEscapeAttr(norm.name)}}" placeholder="如：艾尔森林、碧叶镇、德尔地下城"></label>
+                        </div>
+                        <div class="world-book-toolbar" style="margin-top:8px">
+                          <button class="secondary" type="button" data-action="add-entry">+ 添加条目</button>
+                        </div>
+                        <div class="region-entries">${{entriesHtml}}</div>
+                      </div>
+                    </details>
+                  `;
+
+                  // Region details toggle
+                  const rDetails = regionEl.querySelector(":scope > details");
+                  rDetails.addEventListener("toggle", () => {{
+                    if (rDetails.open) rbOpenState.regions.add(rKey);
+                    else rbOpenState.regions.delete(rKey);
+                    rbHasCapturedOpenState = true;
+                    rbPersistOpenState();
+                  }});
+
+                  // Region name/id sync to summary
+                  const nameInput = regionEl.querySelector("[data-field='region-name']");
+                  const idInput = regionEl.querySelector("[data-field='region-id']");
+                  const titleEl = regionEl.querySelector(".region-head .entry-title");
+                  const refreshRegionTitle = () => {{
+                    titleEl.textContent = nameInput.value.trim() || idInput.value.trim() || `区域 ${{rIdx + 1}}`;
+                  }};
+                  nameInput.addEventListener("input", refreshRegionTitle);
+                  idInput.addEventListener("input", refreshRegionTitle);
+
+                  // Delete region
+                  regionEl.querySelector("[data-action='delete-region']").addEventListener("click", (event) => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (!confirm("确定删除整个区域及其所有条目？")) return;
+                    rbCaptureOpenState();
+                    rbSyncFromDom();
+                    rbState.regions.splice(rIdx, 1);
+                    rbOpenState.regions.delete(rKey);
+                    rbPersistOpenState();
+                    rbRenderRegions();
+                  }});
+
+                  // Add entry
+                  regionEl.querySelector("[data-action='add-entry']").addEventListener("click", (event) => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                    rbCaptureOpenState();
+                    rbSyncFromDom();
+                    const newEntry = rbEntryDefaults(rbState.regions[rIdx].entries.length);
+                    rbState.regions[rIdx].entries.push(newEntry);
+                    // Auto-open the new entry
+                    const eKey = rbEntryKey(newEntry, rIdx, rbState.regions[rIdx].entries.length - 1);
+                    rbOpenState.entries.add(eKey);
+                    // Also open the region
+                    rbOpenState.regions.add(rKey);
+                    rbPersistOpenState();
+                    rbRenderRegions();
+                  }});
+
+                  // Region drag
+                  const regionDragHandle = regionEl.querySelector("[data-action='drag-region']");
+                  regionDragHandle.addEventListener("click", (event) => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }});
+                  regionDragHandle.addEventListener("dragstart", (event) => {{
+                    rbSyncFromDom();
+                    rbDraggingRegionIdx = rIdx;
+                    regionEl.classList.add("dragging");
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", `region:${{rIdx}}`);
+                  }});
+                  regionDragHandle.addEventListener("dragend", () => {{
+                    rbDraggingRegionIdx = null;
+                    regionEl.classList.remove("dragging");
+                    regionsEl.querySelectorAll(".drag-over").forEach((item) => item.classList.remove("drag-over"));
+                  }});
+                  regionEl.addEventListener("dragover", (event) => {{
+                    if (rbDraggingRegionIdx === null || rbDraggingRegionIdx === rIdx) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    regionEl.classList.add("drag-over");
+                  }});
+                  regionEl.addEventListener("dragleave", () => {{
+                    regionEl.classList.remove("drag-over");
+                  }});
+                  regionEl.addEventListener("drop", (event) => {{
+                    event.preventDefault();
+                    regionEl.classList.remove("drag-over");
+                    if (rbDraggingRegionIdx === null || rbDraggingRegionIdx === rIdx) return;
+                    rbCaptureOpenState();
+                    rbSyncFromDom();
+                    const moved = rbState.regions.splice(rbDraggingRegionIdx, 1)[0];
+                    rbState.regions.splice(rIdx, 0, moved);
+                    rbDraggingRegionIdx = null;
+                    rbRenderRegions();
+                  }});
+
+                  // Entry events
+                  regionEl.querySelectorAll(".rb-entry").forEach((entryCard, eIdx) => {{
+                    const eDetails = entryCard.querySelector("details");
+                    const eKey = entryCard.dataset.entryKey;
+
+                    eDetails.addEventListener("toggle", () => {{
+                      if (eDetails.open) rbOpenState.entries.add(eKey);
+                      else rbOpenState.entries.delete(eKey);
+                      rbHasCapturedOpenState = true;
+                      rbPersistOpenState();
+                    }});
+
+                    entryCard.querySelector(".summary-check").addEventListener("click", (event) => {{
+                      event.stopPropagation();
+                    }});
+
+                    // Delete entry
+                    entryCard.querySelector("[data-action='delete-entry']").addEventListener("click", (event) => {{
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!confirm("确定删除这个条目？")) return;
+                      rbCaptureOpenState();
+                      rbSyncFromDom();
+                      rbState.regions[rIdx].entries.splice(eIdx, 1);
+                      rbOpenState.entries.delete(eKey);
+                      rbPersistOpenState();
+                      rbRenderRegions();
+                    }});
+
+                    // Entry title sync
+                    const titleInput = entryCard.querySelector("[data-field='title']");
+                    const idInput = entryCard.querySelector("[data-field='id']");
+                    const entryTitleEl = entryCard.querySelector(".entry-title");
+                    const refreshEntryTitle = () => {{
+                      entryTitleEl.textContent = titleInput.value.trim() || idInput.value.trim() || `条目 ${{eIdx + 1}}`;
+                    }};
+                    titleInput.addEventListener("input", refreshEntryTitle);
+                    idInput.addEventListener("input", refreshEntryTitle);
+
+                    // Entry drag
+                    const entryDragHandle = entryCard.querySelector("[data-action='drag-entry']");
+                    entryDragHandle.addEventListener("click", (event) => {{
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }});
+                    entryDragHandle.addEventListener("dragstart", (event) => {{
+                      rbSyncFromDom();
+                      rbDraggingEntryIdx = eIdx;
+                      rbDraggingRegionForEntry = rIdx;
+                      entryCard.classList.add("dragging");
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", `entry:${{rIdx}}:${{eIdx}}`);
+                    }});
+                    entryDragHandle.addEventListener("dragend", () => {{
+                      rbDraggingEntryIdx = null;
+                      rbDraggingRegionForEntry = null;
+                      entryCard.classList.remove("dragging");
+                      regionsEl.querySelectorAll(".drag-over").forEach((item) => item.classList.remove("drag-over"));
+                    }});
+                    entryCard.addEventListener("dragover", (event) => {{
+                      // Only allow drop within same region
+                      if (rbDraggingRegionForEntry !== rIdx || rbDraggingEntryIdx === null || rbDraggingEntryIdx === eIdx) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      entryCard.classList.add("drag-over");
+                    }});
+                    entryCard.addEventListener("dragleave", () => {{
+                      entryCard.classList.remove("drag-over");
+                    }});
+                    entryCard.addEventListener("drop", (event) => {{
+                      event.preventDefault();
+                      entryCard.classList.remove("drag-over");
+                      if (rbDraggingRegionForEntry !== rIdx || rbDraggingEntryIdx === null || rbDraggingEntryIdx === eIdx) return;
+                      rbCaptureOpenState();
+                      rbSyncFromDom();
+                      const entries = rbState.regions[rIdx].entries;
+                      const movedEntry = entries.splice(rbDraggingEntryIdx, 1)[0];
+                      const targetIdx = rbDraggingEntryIdx < eIdx ? eIdx - 1 : eIdx;
+                      entries.splice(targetIdx, 0, movedEntry);
+                      rbDraggingEntryIdx = null;
+                      rbDraggingRegionForEntry = null;
+                      rbRenderRegions();
+                    }});
+                  }});
+
+                  regionsEl.appendChild(regionEl);
+                }});
+              }}
+
+              addRegionButton.addEventListener("click", () => {{
+                rbCaptureOpenState();
+                rbSyncFromDom();
+                const newRegion = rbRegionDefaults(rbState.regions.length);
+                rbState.regions.push(newRegion);
+                const rKey = rbRegionKey(newRegion, rbState.regions.length - 1);
+                rbOpenState.regions.add(rKey);
+                rbPersistOpenState();
+                rbRenderRegions();
+              }});
+
+              rbForm.addEventListener("submit", () => {{
+                rbSyncFromDom();
+                rbContentInput.value = JSON.stringify(rbState, null, 2);
+              }});
+
+              rbState.regions = rbState.regions.map((r, i) => rbNormalizeRegion(r, i));
+              rbLoadOpenState();
+              rbRenderRegions();
+            </script>
+            """,
+        )
+
+    @staticmethod
+    def _normalize_region_book(raw: object) -> dict:
+        book = dict(raw) if isinstance(raw, dict) else {}
+        raw_regions = book.get("regions", [])
+        if not isinstance(raw_regions, list):
+            raw_regions = []
+
+        normalized_regions = []
+        for r_idx, raw_region in enumerate(raw_regions):
+            if not isinstance(raw_region, dict):
+                continue
+            region_id = str(raw_region.get("id") or f"region_{r_idx + 1}").strip()
+            region_name = str(raw_region.get("name") or "").strip()
+
+            raw_entries = raw_region.get("entries", [])
+            if not isinstance(raw_entries, list):
+                raw_entries = []
+
+            normalized_entries = []
+            for e_idx, raw_entry in enumerate(raw_entries):
+                if not isinstance(raw_entry, dict):
+                    continue
+                keys = raw_entry.get("keys", [])
+                if isinstance(keys, str):
+                    keys = [keys]
+                if not isinstance(keys, list):
+                    keys = []
+                try:
+                    min_level = int(raw_entry.get("min_level", 1))
+                except (TypeError, ValueError):
+                    min_level = 1
+                normalized_entries.append({
+                    "id": str(raw_entry.get("id") or f"entry_{e_idx + 1}").strip(),
+                    "title": str(raw_entry.get("title") or ""),
+                    "enabled": raw_entry.get("enabled", True) is not False,
+                    "recursive": raw_entry.get("recursive", True) is not False,
+                    "strategy": (
+                        "always"
+                        if str(raw_entry.get("strategy") or "keyword").strip().lower() == "always"
+                        else "keyword"
+                    ),
+                    "keys": [str(key).strip() for key in keys if str(key).strip()],
+                    "min_level": max(1, min_level),
+                    "brief": str(raw_entry.get("brief") or ""),
+                    "content": str(raw_entry.get("content") or ""),
+                })
+
+            normalized_regions.append({
+                "id": region_id,
+                "name": region_name,
+                "entries": normalized_entries,
+            })
+
+        book["version"] = book.get("version", 1)
+        book["regions"] = normalized_regions
+        return book
+
     async def _editable_source(self, request: web.Request) -> web.Response:
         if not self._is_admin(request):
             return self._forbidden()
@@ -887,6 +1458,8 @@ class SaveWebViewer:
                 self.editable_manager.write_world_book(content)
             elif file_id in {"skill_book/default.json", "status_book/default.json"}:
                 self.editable_manager.write_json_book(file_id, content)
+            elif file_id == "region_book/default.json":
+                self.editable_manager.write_json_book(file_id, content)
             else:
                 self.editable_manager.write_text(file_id, content)
             self.editable_manager.write_note(file_id, note)
@@ -957,6 +1530,10 @@ class SaveWebViewer:
 
     @classmethod
     def _format_book_key_info(cls, raw: object) -> str:
+        # Check if this is a region book format
+        if isinstance(raw, dict) and "regions" in raw:
+            return cls._format_region_book_key_info(raw)
+
         book = cls._normalize_world_book(raw)
         entries = book.get("entries", [])
         if not isinstance(entries, list):
@@ -983,6 +1560,43 @@ class SaveWebViewer:
             blocks.append(f"{title}\n{content}")
         # 每个条目之间用分隔线隔开
         return "\n\n-----------------------------------------------\n\n".join(blocks) + ("\n" if blocks else "")
+
+    @classmethod
+    def _format_region_book_key_info(cls, raw: object) -> str:
+        book = cls._normalize_region_book(raw)
+        regions = book.get("regions", [])
+        if not isinstance(regions, list):
+            return ""
+
+        region_blocks: list[str] = []
+        for region in regions:
+            if not isinstance(region, dict):
+                continue
+            region_name = str(region.get("name") or region.get("id") or "未知区域")
+            entries = region.get("entries", [])
+            if not isinstance(entries, list):
+                continue
+
+            entry_lines: list[str] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                title = cls._single_line_text(
+                    entry.get("title") or entry.get("id") or "条目"
+                )
+                min_level = int(entry.get("min_level", 1))
+                brief = str(entry.get("brief") or "").strip()
+                content = str(entry.get("content") or "").strip()
+                entry_lines.append(f"  [{title}] (Lv.{min_level})")
+                if brief:
+                    entry_lines.append(f"    简略: {brief}")
+                if content:
+                    entry_lines.append(f"    详细: {content}")
+
+            if entry_lines:
+                region_blocks.append(f"【{region_name}】\n" + "\n".join(entry_lines))
+
+        return "\n\n-----------------------------------------------\n\n".join(region_blocks) + ("\n" if region_blocks else "")
 
     @staticmethod
     def _single_line_text(value: object) -> str:
@@ -2013,6 +2627,14 @@ class SaveWebViewer:
     .world-entry {{ margin: 0; background: #fff; border: 1px solid #dde2ea; border-radius: 8px; box-shadow: 0 3px 10px rgba(31, 41, 55, 0.04); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
     .world-entry.dragging {{ opacity: .45; transform: scale(.995); }}
     .world-entry.drag-over {{ border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.14), 0 12px 28px rgba(31, 41, 55, 0.1); }}
+    .region-block {{ margin: 0 0 12px; background: #fff; border: 2px solid #c8d6e5; border-radius: 10px; box-shadow: 0 3px 10px rgba(31, 41, 55, 0.06); transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, opacity .14s ease; }}
+    .region-block.dragging {{ opacity: .45; transform: scale(.995); }}
+    .region-block.drag-over {{ border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.14), 0 12px 28px rgba(31, 41, 55, 0.1); }}
+    .region-block > details {{ padding: 0; }}
+    .region-head {{ background: linear-gradient(180deg, #eef4fa, #dde6f0); }}
+    .region-body {{ padding: 10px; }}
+    .region-entries {{ margin-top: 8px; }}
+    .region-entries .rb-entry {{ margin-bottom: 6px; }}
     .world-entry details {{ padding: 0; }}
     .world-entry-head {{ display: flex; gap: 8px; align-items: center; padding: 7px 10px; cursor: pointer; background: linear-gradient(180deg, #f8fafc, #eef4fa); border-radius: 8px; }}
     .world-entry details[open] .world-entry-head {{ border-bottom: 1px solid #dde2ea; border-radius: 8px 8px 0 0; }}
@@ -2147,6 +2769,7 @@ class SaveWebViewer:
             "world_book/default.json",
             "skill_book/default.json",
             "status_book/default.json",
+            "region_book/default.json",
         }
 
     def _editable_rows(self, items: list[dict[str, str]], category: str) -> list[str]:

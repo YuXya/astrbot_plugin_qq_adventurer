@@ -22,6 +22,8 @@ class EditableResourceManager:
         "skill_book_wrapper": "prompts/skill_book_wrapper.txt",
         "status_book_wrapper": "prompts/status_book_wrapper.txt",
         "world_book_empty": "prompts/world_book_empty.txt",
+        "region_book_wrapper": "prompts/region_book_wrapper.txt",
+        "region_book_empty": "prompts/region_book_empty.txt",
     }
 
     def __init__(self, plugin_name: str = "astrbot_plugin_qq_adventurer"):
@@ -40,6 +42,10 @@ class EditableResourceManager:
     @property
     def status_book_path(self) -> Path:
         return self.root_dir / "status_book" / "default.json"
+
+    @property
+    def region_book_path(self) -> Path:
+        return self.root_dir / "region_book" / "default.json"
 
     def get_prompt(self, name: str) -> str:
         relative = self.PROMPT_FILES[name]
@@ -133,6 +139,7 @@ class EditableResourceManager:
             "world_book/default.json",
             "skill_book/default.json",
             "status_book/default.json",
+            "region_book/default.json",
         }:
             json.loads(content)
         self.write_text(relative_path, content)
@@ -190,6 +197,12 @@ class EditableResourceManager:
                 "category": "world_background",
             },
             {
+                "id": "region_book/default.json",
+                "label": "区域书 default.json",
+                "type": "json",
+                "category": "world_background",
+            },
+            {
                 "id": self.PROMPT_FILES["reincarnation_prompt"],
                 "label": "转生卡 Prompt",
                 "type": "text",
@@ -243,6 +256,18 @@ class EditableResourceManager:
                 "type": "text",
                 "category": "text_completion",
             },
+            {
+                "id": self.PROMPT_FILES["region_book_wrapper"],
+                "label": "区域书包装话术",
+                "type": "text",
+                "category": "text_completion",
+            },
+            {
+                "id": self.PROMPT_FILES["region_book_empty"],
+                "label": "区域书未命中话术",
+                "type": "text",
+                "category": "text_completion",
+            },
         ]
 
     def _default_content_map(self) -> dict[str, str]:
@@ -250,6 +275,7 @@ class EditableResourceManager:
             "world_book/default.json": defaults.load_builtin_world_book(),
             "skill_book/default.json": defaults.SKILL_BOOK_DEFAULT,
             "status_book/default.json": defaults.STATUS_BOOK_DEFAULT,
+            "region_book/default.json": defaults.REGION_BOOK_DEFAULT,
             self.PROMPT_FILES["reincarnation_prompt"]: defaults.REINCARNATION_PROMPT,
             self.PROMPT_FILES["adventure_diary_prompt"]: defaults.ADVENTURE_DIARY_PROMPT,
             self.PROMPT_FILES[
@@ -261,6 +287,8 @@ class EditableResourceManager:
             self.PROMPT_FILES["skill_book_wrapper"]: defaults.SKILL_BOOK_WRAPPER,
             self.PROMPT_FILES["status_book_wrapper"]: defaults.STATUS_BOOK_WRAPPER,
             self.PROMPT_FILES["world_book_empty"]: defaults.WORLD_BOOK_EMPTY,
+            self.PROMPT_FILES["region_book_wrapper"]: defaults.REGION_BOOK_WRAPPER,
+            self.PROMPT_FILES["region_book_empty"]: defaults.REGION_BOOK_EMPTY,
         }
 
     def _default_note_map(self) -> dict[str, str]:
@@ -277,6 +305,11 @@ class EditableResourceManager:
             "status_book/default.json": (
                 "状态书文件。结构与世界书一致，条目标题代表全部可觉醒状态。已拥有状态会命中并注入说明，"
                 "未拥有状态标题会进入待觉醒列表。base_path 是给 AI 输出 update.patches 的路径提示。"
+            ),
+            "region_book/default.json": (
+                "区域书文件。按区域（如艾尔森林、碧叶镇、德尔地下城）划分条目，每个条目有简略介绍和详细介绍。"
+                "玩家当前区域命中的条目返回详细介绍，其他区域命中的条目返回简略介绍。"
+                "min_level 为等级门槛，玩家等级不足时不命中。排序由网页上的上下位置决定。"
             ),
             self.PROMPT_FILES["reincarnation_prompt"]: (
                 "用于 /异世界转生 的主任务 Prompt。它会组合触发命令、目标群友昵称或 ID、"
@@ -314,6 +347,14 @@ class EditableResourceManager:
             self.PROMPT_FILES["world_book_empty"]: (
                 "当世界书没有命中任何条目时使用。它会作为占位文本嵌入转生卡或冒险日记的主任务 Prompt，"
                 "说明本次没有额外世界书补充设定。"
+            ),
+            self.PROMPT_FILES["region_book_wrapper"]: (
+                "当区域书命中至少一个条目时使用。可用变量：{{local_entries}}（当前区域详细设定）和 "
+                "{{remote_entries}}（其他区域简略设定）。最终会嵌入冒险日记主任务 Prompt 的补充设定区域。"
+            ),
+            self.PROMPT_FILES["region_book_empty"]: (
+                "当区域书没有命中任何条目时使用。它会作为占位文本嵌入冒险日记的主任务 Prompt，"
+                "说明本次没有额外区域书补充设定。"
             ),
         }
 

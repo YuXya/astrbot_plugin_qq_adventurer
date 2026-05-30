@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ....domain.models.data_models import ReincarnationCard
 from ....domain.services.adventure_domain_service import AdventureDomainService
+from ...region_book import RegionBookEngine
 from ...world_book import WorldBookEngine
 from .base_analyzer import BaseAnalyzer
 
@@ -17,6 +18,7 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
         super().__init__(context, config_manager, editable_manager)
         self.domain_service = domain_service
         self.world_book_engine = WorldBookEngine(editable_manager=self.editable_manager)
+        self.region_book_engine = RegionBookEngine(editable_manager=self.editable_manager)
 
     def get_data_type(self) -> str:
         return "异世界转生人物卡"
@@ -44,6 +46,15 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
         world_book_text = self.world_book_engine.build_prompt_text(
             world_book_scan_parts
         ).prompt_text
+        region_book_text = self.region_book_engine.build_prompt_text(
+            world_book_scan_parts,
+            player_region=None,
+            player_level=1,
+        ).prompt_text
+        supplement_text = self._join_optional_prompt_parts([
+            world_book_text,
+            region_book_text,
+        ])
 
         return self.editable_manager.render_prompt(
             "reincarnation_prompt",
@@ -52,7 +63,7 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
                 "player_text": player_text,
                 "messages_text": messages_text,
                 "avatar_text": avatar_text,
-                "world_book_text": world_book_text,
+                "world_book_text": supplement_text,
             },
         )
 
@@ -82,3 +93,7 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
         if not caption:
             return "（未启用头像转述，或头像转述失败。本次不参考头像外貌。）"
         return caption[:240]
+
+    @staticmethod
+    def _join_optional_prompt_parts(parts: list[str]) -> str:
+        return "\n\n".join(str(part).strip() for part in parts if str(part).strip())
