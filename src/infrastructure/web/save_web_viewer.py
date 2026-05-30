@@ -509,6 +509,7 @@ class SaveWebViewer:
                   strategy: "keyword",
                   keys: [],
                   min_level: 1,
+                  max_level: 100,
                   content: "",
                 }};
               }}
@@ -518,6 +519,8 @@ class SaveWebViewer:
                   ? entry.keys
                   : (typeof entry.keys === "string" ? [entry.keys] : []);
                 const minLevel = Number.parseInt(entry.min_level, 10);
+                const maxLevel = Number.parseInt(entry.max_level, 10);
+                const safeMin = Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1;
                 return {{
                   id: String(entry.id || `entry_${{index + 1}}`).trim(),
                   title: String(entry.title || ""),
@@ -525,7 +528,8 @@ class SaveWebViewer:
                   recursive: entry.recursive !== false,
                   strategy: entry.strategy === "always" ? "always" : "keyword",
                   keys: keys.map((key) => String(key).trim()).filter(Boolean),
-                  min_level: Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1,
+                  min_level: safeMin,
+                  max_level: Number.isFinite(maxLevel) && maxLevel >= safeMin ? maxLevel : 100,
                   content: String(entry.content || ""),
                 }};
               }}
@@ -552,6 +556,7 @@ class SaveWebViewer:
                   strategy: card.querySelector("[data-field='strategy']").value,
                   keys: splitKeys(card.querySelector("[data-field='keys']").value),
                   min_level: card.querySelector("[data-field='min_level']").value,
+                  max_level: card.querySelector("[data-field='max_level']").value,
                   content: card.querySelector("[data-field='content']").value,
                 }}, index));
               }}
@@ -615,7 +620,7 @@ class SaveWebViewer:
                       <summary class="world-entry-head">
                         <button class="drag-handle" type="button" data-action="drag" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
                         <span class="entry-title">${{escapeHtml(summaryTitle)}}</span>
-                        <span class="muted" style="margin-left:4px">Lv.${{normalized.min_level}}</span>
+                        <span class="muted" style="margin-left:4px">Lv.${{normalized.min_level}}${{normalized.max_level < 100 ? "~" + normalized.max_level : ""}}</span>
                         <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
                         <label class="summary-check"><input data-field="recursive" type="checkbox"${{normalized.recursive ? " checked" : ""}}> 允许递归</label>
                         <button class="danger" type="button" data-action="delete">删除</button>
@@ -625,6 +630,7 @@ class SaveWebViewer:
                           <label class="compact-field"><span>ID</span><input data-field="id" type="text" value="${{escapeAttr(normalized.id)}}"></label>
                           <label class="compact-field"><span>标题</span><input data-field="title" type="text" value="${{escapeAttr(normalized.title)}}"></label>
                           <label class="compact-field"><span>等级门槛</span><input data-field="min_level" type="number" step="1" min="1" value="${{normalized.min_level}}"></label>
+                          <label class="compact-field"><span>等级上限</span><input data-field="max_level" type="number" step="1" min="1" value="${{normalized.max_level}}"></label>
                           <label class="compact-field"><span>触发方式</span>
                             <select data-field="strategy">
                               <option value="keyword"${{normalized.strategy === "keyword" ? " selected" : ""}}>关键词命中</option>
@@ -867,6 +873,7 @@ class SaveWebViewer:
                   strategy: "keyword",
                   keys: [],
                   min_level: 1,
+                  max_level: 100,
                   brief: "",
                   content: "",
                 }};
@@ -885,6 +892,8 @@ class SaveWebViewer:
                   ? entry.keys
                   : (typeof entry.keys === "string" ? [entry.keys] : []);
                 const minLevel = Number.parseInt(entry.min_level, 10);
+                const maxLevel = Number.parseInt(entry.max_level, 10);
+                const safeMin = Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1;
                 return {{
                   id: String(entry.id || `entry_${{index + 1}}`).trim(),
                   title: String(entry.title || ""),
@@ -892,7 +901,8 @@ class SaveWebViewer:
                   recursive: entry.recursive !== false,
                   strategy: entry.strategy === "always" ? "always" : "keyword",
                   keys: keys.map((key) => String(key).trim()).filter(Boolean),
-                  min_level: Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1,
+                  min_level: safeMin,
+                  max_level: Number.isFinite(maxLevel) && maxLevel >= safeMin ? maxLevel : 100,
                   brief: String(entry.brief || ""),
                   content: String(entry.content || ""),
                 }};
@@ -981,6 +991,7 @@ class SaveWebViewer:
                     strategy: card.querySelector("[data-field='strategy']").value,
                     keys: rbSplitKeys(card.querySelector("[data-field='keys']").value),
                     min_level: card.querySelector("[data-field='min_level']").value,
+                    max_level: card.querySelector("[data-field='max_level']").value,
                     brief: card.querySelector("[data-field='brief']").value,
                     content: card.querySelector("[data-field='content']").value,
                   }}, eIdx));
@@ -1016,7 +1027,7 @@ class SaveWebViewer:
                             <span class="entry-title">${{rbEscapeHtml(entrySummary)}}</span>
                             <label class="summary-check"><input data-field="enabled" type="checkbox"${{eNorm.enabled ? " checked" : ""}}> 启用</label>
                             <label class="summary-check"><input data-field="recursive" type="checkbox"${{eNorm.recursive ? " checked" : ""}}> 允许递归</label>
-                            <span class="muted" style="margin-left:4px">Lv.${{eNorm.min_level}}</span>
+                            <span class="muted" style="margin-left:4px">Lv.${{eNorm.min_level}}${{eNorm.max_level < 100 ? "~" + eNorm.max_level : ""}}</span>
                             <button class="danger" type="button" data-action="delete-entry">删除</button>
                           </summary>
                           <div class="world-entry-body">
@@ -1024,6 +1035,7 @@ class SaveWebViewer:
                               <label class="compact-field"><span>ID</span><input data-field="id" type="text" value="${{rbEscapeAttr(eNorm.id)}}"></label>
                               <label class="compact-field"><span>标题</span><input data-field="title" type="text" value="${{rbEscapeAttr(eNorm.title)}}"></label>
                               <label class="compact-field"><span>等级门槛</span><input data-field="min_level" type="number" step="1" min="1" value="${{eNorm.min_level}}"></label>
+                              <label class="compact-field"><span>等级上限</span><input data-field="max_level" type="number" step="1" min="1" value="${{eNorm.max_level}}"></label>
                               <label class="compact-field"><span>触发方式</span>
                                 <select data-field="strategy">
                                   <option value="keyword"${{eNorm.strategy === "keyword" ? " selected" : ""}}>关键词命中</option>
@@ -1500,6 +1512,12 @@ class SaveWebViewer:
                 min_level = int(entry.get("min_level", 1))
             except (TypeError, ValueError):
                 min_level = 1
+            try:
+                max_level = int(entry.get("max_level", 100))
+            except (TypeError, ValueError):
+                max_level = 100
+            if max_level < min_level:
+                max_level = min_level
             normalized_entries.append(
                 {
                     "id": str(entry.get("id") or fallback_id).strip(),
@@ -1514,6 +1532,7 @@ class SaveWebViewer:
                     ),
                     "keys": [str(key).strip() for key in keys if str(key).strip()],
                     "min_level": max(1, min_level),
+                    "max_level": max(max(1, min_level), max_level),
                     "content": str(entry.get("content") or ""),
                 }
             )

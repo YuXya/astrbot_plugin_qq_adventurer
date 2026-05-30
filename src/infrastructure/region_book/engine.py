@@ -121,6 +121,9 @@ class RegionBookEngine:
             if entry.min_level > player_level:
                 continue
 
+            if entry.max_level < player_level:
+                continue
+
             if entry.strategy == "always":
                 if include_always:
                     matched.append(entry)
