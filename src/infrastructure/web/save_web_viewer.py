@@ -420,11 +420,11 @@ class SaveWebViewer:
             else "世界书条目"
         )
         book_hint = (
-            "每个条目会在命中后作为技能说明注入 Prompt。"
+            "每个条目会在命中后作为技能说明注入 Prompt。min_level 为等级门槛，不到此等级的玩家无法看到该条目。"
             if file_id == "skill_book/default.json"
-            else "条目标题代表可觉醒状态；已拥有状态命中后注入说明，未拥有状态标题进入待觉醒列表。"
+            else "条目标题代表可觉醒状态；已拥有状态命中后注入说明，未拥有状态标题进入待觉醒列表。min_level 为等级门槛。"
             if file_id == "status_book/default.json"
-            else "每个条目会在命中后作为世界背景补充注入 Prompt。"
+            else "每个条目会在命中后作为世界背景补充注入 Prompt。min_level 为等级门槛，不到此等级的玩家无法看到该条目。"
         )
         storage_key = "qq_adventurer:book:open_entries:" + file_id.replace("/", ":")
         source_url = self._url(
@@ -508,7 +508,7 @@ class SaveWebViewer:
                   recursive: true,
                   strategy: "keyword",
                   keys: [],
-                  order: 100,
+                  min_level: 1,
                   content: "",
                 }};
               }}
@@ -517,7 +517,7 @@ class SaveWebViewer:
                 const keys = Array.isArray(entry.keys)
                   ? entry.keys
                   : (typeof entry.keys === "string" ? [entry.keys] : []);
-                const order = Number.parseInt(entry.order, 10);
+                const minLevel = Number.parseInt(entry.min_level, 10);
                 return {{
                   id: String(entry.id || `entry_${{index + 1}}`).trim(),
                   title: String(entry.title || ""),
@@ -525,7 +525,7 @@ class SaveWebViewer:
                   recursive: entry.recursive !== false,
                   strategy: entry.strategy === "always" ? "always" : "keyword",
                   keys: keys.map((key) => String(key).trim()).filter(Boolean),
-                  order: Number.isFinite(order) ? order : 100,
+                  min_level: Number.isFinite(minLevel) && minLevel >= 1 ? minLevel : 1,
                   content: String(entry.content || ""),
                 }};
               }}
@@ -551,7 +551,7 @@ class SaveWebViewer:
                   recursive: card.querySelector("[data-field='recursive']").checked,
                   strategy: card.querySelector("[data-field='strategy']").value,
                   keys: splitKeys(card.querySelector("[data-field='keys']").value),
-                  order: card.querySelector("[data-field='order']").value,
+                  min_level: card.querySelector("[data-field='min_level']").value,
                   content: card.querySelector("[data-field='content']").value,
                 }}, index));
               }}
@@ -615,6 +615,7 @@ class SaveWebViewer:
                       <summary class="world-entry-head">
                         <button class="drag-handle" type="button" data-action="drag" draggable="true" title="拖动排序" aria-label="拖动排序">☰</button>
                         <span class="entry-title">${{escapeHtml(summaryTitle)}}</span>
+                        <span class="muted" style="margin-left:4px">Lv.${{normalized.min_level}}</span>
                         <label class="summary-check"><input data-field="enabled" type="checkbox"${{normalized.enabled ? " checked" : ""}}> 启用</label>
                         <label class="summary-check"><input data-field="recursive" type="checkbox"${{normalized.recursive ? " checked" : ""}}> 允许递归</label>
                         <button class="danger" type="button" data-action="delete">删除</button>
@@ -623,7 +624,7 @@ class SaveWebViewer:
                         <div class="world-entry-grid">
                           <label class="compact-field"><span>ID</span><input data-field="id" type="text" value="${{escapeAttr(normalized.id)}}"></label>
                           <label class="compact-field"><span>标题</span><input data-field="title" type="text" value="${{escapeAttr(normalized.title)}}"></label>
-                          <label class="compact-field"><span>顺序</span><input data-field="order" type="number" step="1" value="${{normalized.order}}"></label>
+                          <label class="compact-field"><span>等级门槛</span><input data-field="min_level" type="number" step="1" min="1" value="${{normalized.min_level}}"></label>
                           <label class="compact-field"><span>触发方式</span>
                             <select data-field="strategy">
                               <option value="keyword"${{normalized.strategy === "keyword" ? " selected" : ""}}>关键词命中</option>
@@ -721,10 +722,7 @@ class SaveWebViewer:
                 const nextEntries = [...state.entries];
                 const [moved] = nextEntries.splice(fromIndex, 1);
                 nextEntries.splice(toIndex, 0, moved);
-                state.entries = nextEntries.map((entry, index) => ({{
-                  ...entry,
-                  order: (index + 1) * 100,
-                }}));
+                state.entries = nextEntries;
                 renderEntries();
               }}
 
@@ -1018,7 +1016,7 @@ class SaveWebViewer:
                             <span class="entry-title">${{rbEscapeHtml(entrySummary)}}</span>
                             <label class="summary-check"><input data-field="enabled" type="checkbox"${{eNorm.enabled ? " checked" : ""}}> 启用</label>
                             <label class="summary-check"><input data-field="recursive" type="checkbox"${{eNorm.recursive ? " checked" : ""}}> 允许递归</label>
-                            <span class="muted" style="margin-left:4px">Lv.${{eNorm.min_level}}</span>
+                            <span class="muted" style="margin-left:4px">Lv.${{normalized.min_level}}</span>
                             <button class="danger" type="button" data-action="delete-entry">删除</button>
                           </summary>
                           <div class="world-entry-body">
@@ -1499,9 +1497,9 @@ class SaveWebViewer:
             if not isinstance(keys, list):
                 keys = []
             try:
-                order = int(entry.get("order", 100))
+                min_level = int(entry.get("min_level", 1))
             except (TypeError, ValueError):
-                order = 100
+                min_level = 1
             normalized_entries.append(
                 {
                     "id": str(entry.get("id") or fallback_id).strip(),
@@ -1515,7 +1513,7 @@ class SaveWebViewer:
                         else "keyword"
                     ),
                     "keys": [str(key).strip() for key in keys if str(key).strip()],
-                    "order": order,
+                    "min_level": max(1, min_level),
                     "content": str(entry.get("content") or ""),
                 }
             )
@@ -1547,7 +1545,7 @@ class SaveWebViewer:
         ]
         for index, entry in sorted(
             indexed_entries,
-            key=lambda item: (int(item[1].get("order", 100)), item[0]),
+            key=lambda item: (int(item[1].get("min_level", 1)), item[0]),
         ):
             title = cls._single_line_text(
                 entry.get("title") or entry.get("id") or f"条目{index + 1}"

@@ -43,17 +43,36 @@ class AdventureAnalyzer(BaseAnalyzer[ReincarnationCard]):
             str(theme or "").lstrip("/／"),
             *(player_messages or []),
         ]
-        world_book_text = self.world_book_engine.build_prompt_text(
-            world_book_scan_parts
-        ).prompt_text
-        region_book_text = self.region_book_engine.build_prompt_text(
+        # --- 世界书与区域书交叉递归 ---
+        world_book_result = self.world_book_engine.build_prompt_text(
+            world_book_scan_parts, player_level=1,
+        )
+        region_book_result = self.region_book_engine.build_prompt_text(
             world_book_scan_parts,
             player_region=None,
             player_level=1,
-        ).prompt_text
+        )
+        cross_hit_parts: list[str] = []
+        for entry in world_book_result.entries:
+            if entry.recursive and entry.content:
+                cross_hit_parts.append(entry.content)
+        for entry in region_book_result.local_entries + region_book_result.remote_entries:
+            if entry.recursive and entry.content:
+                cross_hit_parts.append(entry.content)
+        if cross_hit_parts:
+            enriched_scan_parts = world_book_scan_parts + cross_hit_parts
+            world_book_result = self.world_book_engine.build_prompt_text(
+                enriched_scan_parts, player_level=1,
+            )
+            region_book_result = self.region_book_engine.build_prompt_text(
+                enriched_scan_parts,
+                player_region=None,
+                player_level=1,
+            )
+
         supplement_text = self._join_optional_prompt_parts([
-            world_book_text,
-            region_book_text,
+            world_book_result.prompt_text,
+            region_book_result.prompt_text,
         ])
 
         return self.editable_manager.render_prompt(

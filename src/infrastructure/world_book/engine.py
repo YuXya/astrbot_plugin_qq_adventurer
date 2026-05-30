@@ -22,7 +22,11 @@ class WorldBookEngine:
         self.editable_manager = editable_manager or EditableResourceManager()
         self.book_path = book_path or self.editable_manager.world_book_path
 
-    def build_prompt_text(self, player_messages: list[str] | None) -> WorldBookMatchResult:
+    def build_prompt_text(
+        self,
+        player_messages: list[str] | None,
+        player_level: int = 1,
+    ) -> WorldBookMatchResult:
         entries = self._load_entries()
         if not entries:
             return WorldBookMatchResult(entries=[], prompt_text="")
@@ -35,6 +39,7 @@ class WorldBookEngine:
             scan_text,
             activated_ids=activated_ids,
             include_always=True,
+            player_level=player_level,
         )
         recursion_text = self._join_text(
             entry.content for entry in first_round if entry.recursive
@@ -44,9 +49,13 @@ class WorldBookEngine:
             recursion_text,
             activated_ids=activated_ids,
             include_always=False,
+            player_level=player_level,
         )
 
-        activated = sorted(first_round + second_round, key=lambda item: (item.order, item.id))
+        activated = sorted(
+            first_round + second_round,
+            key=lambda item: (item.min_level, item.id),
+        )
         return WorldBookMatchResult(
             entries=activated,
             prompt_text=self._format_prompt_text(activated),
@@ -87,6 +96,7 @@ class WorldBookEngine:
         scan_text: str,
         activated_ids: set[str],
         include_always: bool,
+        player_level: int = 1,
     ) -> list[WorldBookEntry]:
         if not scan_text and not include_always:
             return []
@@ -94,6 +104,9 @@ class WorldBookEngine:
         matched: list[WorldBookEntry] = []
         for entry in entries:
             if entry.id in activated_ids or not entry.enabled:
+                continue
+
+            if entry.min_level > player_level:
                 continue
 
             if entry.strategy == "always":

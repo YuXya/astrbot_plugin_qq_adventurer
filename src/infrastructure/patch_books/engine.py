@@ -18,10 +18,16 @@ class PatchBookEngine:
     def __init__(self, editable_manager: EditableResourceManager | None = None):
         self.editable_manager = editable_manager or EditableResourceManager()
 
-    def build_skill_prompt_text(self, scan_parts: list[str] | None) -> str:
+    def build_skill_prompt_text(
+        self,
+        scan_parts: list[str] | None,
+        player_level: int = 1,
+    ) -> str:
         book = self._load_book(self.editable_manager.skill_book_path, "技能书")
         entries = self._entries_from_book(book)
-        matched = self._match_entries(entries, self._join_text(scan_parts or []))
+        matched = self._match_entries(
+            entries, self._join_text(scan_parts or []), player_level=player_level,
+        )
         if not matched:
             return ""
 
@@ -39,10 +45,14 @@ class PatchBookEngine:
             },
         )
 
-    def build_status_prompt_text(self, state: dict[str, Any]) -> str:
+    def build_status_prompt_text(
+        self,
+        state: dict[str, Any],
+        player_level: int = 1,
+    ) -> str:
         book = self._load_book(self.editable_manager.status_book_path, "状态书")
         entries = self._entries_from_book(book)
-        enabled_entries = [entry for entry in entries if entry.enabled]
+        enabled_entries = [entry for entry in entries if entry.enabled and entry.min_level <= player_level]
         if not enabled_entries:
             return ""
 
@@ -116,6 +126,7 @@ class PatchBookEngine:
         entries: list[WorldBookEntry],
         scan_text: str,
         include_always: bool = True,
+        player_level: int = 1,
     ) -> list[WorldBookEntry]:
         matched: list[WorldBookEntry] = []
         activated_ids: set[str] = set()
@@ -124,6 +135,8 @@ class PatchBookEngine:
 
         for entry in entries:
             if entry.id in activated_ids or not entry.enabled:
+                continue
+            if entry.min_level > player_level:
                 continue
             if entry.strategy == "always":
                 if include_always:
@@ -136,7 +149,7 @@ class PatchBookEngine:
                 matched.append(entry)
                 activated_ids.add(entry.id)
 
-        return sorted(matched, key=lambda item: (item.order, item.id))
+        return sorted(matched, key=lambda item: (item.min_level, item.id))
 
     @staticmethod
     def _contains_any_key(text: str, keys: list[str]) -> bool:

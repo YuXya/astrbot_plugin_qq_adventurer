@@ -138,18 +138,48 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
             str(state.get("location", "")),
             self._format_logs_for_scan(logs),
         ]
-        world_book_text = self.world_book_engine.build_prompt_text(scan_parts).prompt_text
-        region_book_text = self.region_book_engine.build_prompt_text(
+        # --- 世界书与区域书交叉递归 ---
+        # 第一轮：各自独立扫描
+        world_book_result = self.world_book_engine.build_prompt_text(
+            scan_parts, player_level=current_level,
+        )
+        region_book_result = self.region_book_engine.build_prompt_text(
             scan_parts,
             player_region=player_region or None,
             player_level=current_level,
-        ).prompt_text
+        )
+        # 收集双方的命中内容
+        cross_hit_parts: list[str] = []
+        for entry in world_book_result.entries:
+            if entry.recursive and entry.content:
+                cross_hit_parts.append(entry.content)
+        for entry in region_book_result.local_entries + region_book_result.remote_entries:
+            if entry.recursive and entry.content:
+                cross_hit_parts.append(entry.content)
+        # 第二轮：把对方命中内容追加到扫描文本，重新扫描
+        if cross_hit_parts:
+            enriched_scan_parts = scan_parts + cross_hit_parts
+            world_book_result = self.world_book_engine.build_prompt_text(
+                enriched_scan_parts, player_level=current_level,
+            )
+            region_book_result = self.region_book_engine.build_prompt_text(
+                enriched_scan_parts,
+                player_region=player_region or None,
+                player_level=current_level,
+            )
+
+        world_book_text = world_book_result.prompt_text
+        region_book_text = region_book_result.prompt_text
         supplement_text = self._join_optional_prompt_parts(
             [
                 world_book_text,
                 region_book_text,
-                self.patch_book_engine.build_skill_prompt_text(scan_parts),
-                self.patch_book_engine.build_status_prompt_text(state),
+                self.patch_book_engine.build_skill_prompt_text(
+                    scan_parts, player_level=current_level,
+                ),
+                self.patch_book_engine.build_status_prompt_text(
+                    state, player_level=current_level,
+                ),
                 self._format_nearby_players(nearby_players),
             ]
         )
