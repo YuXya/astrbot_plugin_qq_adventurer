@@ -170,13 +170,15 @@ class RegionBookEngine:
         for entry, _region_name in local_entries:
             text = entry.content or entry.brief
             if text:
-                local_parts.append(f"- {text}")
+                label = f"[{entry.title}]: " if entry.title else ""
+                local_parts.append(f"- {label}{text}")
 
         remote_parts = []
         for entry, region_name in remote_entries:
             text = entry.brief
             if text:
-                remote_parts.append(f"- [{region_name}] {text}")
+                label = f"[{entry.title}]: " if entry.title else ""
+                remote_parts.append(f"- [{region_name}] {label}{text}")
 
         if not local_parts and not remote_parts:
             return self.editable_manager.get_prompt("region_book_empty")

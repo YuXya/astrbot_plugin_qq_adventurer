@@ -144,7 +144,10 @@ class WorldBookEngine:
         if not entries:
             return self.editable_manager.get_prompt("world_book_empty")
 
-        contents = [f"- {entry.content}" for entry in entries if entry.content]
+        contents = [
+            f"- [{entry.title}]: {entry.content}" if entry.title else f"- {entry.content}"
+            for entry in entries if entry.content
+        ]
         return self.editable_manager.render_prompt(
             "world_book_wrapper",
             {"entries": "\n".join(contents)},
