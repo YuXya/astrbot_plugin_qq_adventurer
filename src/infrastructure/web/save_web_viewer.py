@@ -1016,7 +1016,7 @@ class SaveWebViewer:
                             <span class="entry-title">${{rbEscapeHtml(entrySummary)}}</span>
                             <label class="summary-check"><input data-field="enabled" type="checkbox"${{eNorm.enabled ? " checked" : ""}}> 启用</label>
                             <label class="summary-check"><input data-field="recursive" type="checkbox"${{eNorm.recursive ? " checked" : ""}}> 允许递归</label>
-                            <span class="muted" style="margin-left:4px">Lv.${{normalized.min_level}}</span>
+                            <span class="muted" style="margin-left:4px">Lv.${{eNorm.min_level}}</span>
                             <button class="danger" type="button" data-action="delete-entry">删除</button>
                           </summary>
                           <div class="world-entry-body">
