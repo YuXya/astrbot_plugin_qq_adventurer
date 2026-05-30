@@ -11,6 +11,7 @@ class WorldBookEntry:
     strategy: str = "keyword"
     keys: list[str] = field(default_factory=list)
     min_level: int = 1
+    max_level: int = 100
     recursive: bool = True
     content: str = ""
 
@@ -27,6 +28,11 @@ class WorldBookEntry:
         except (TypeError, ValueError):
             min_level = 1
 
+        try:
+            max_level = int(raw.get("max_level", 100))
+        except (TypeError, ValueError):
+            max_level = 100
+
         return cls(
             id=str(raw.get("id") or fallback_id).strip(),
             title=str(raw.get("title") or "").strip(),
@@ -34,6 +40,7 @@ class WorldBookEntry:
             strategy=str(raw.get("strategy") or "keyword").strip().lower(),
             keys=[str(key).strip() for key in keys if str(key).strip()],
             min_level=max(1, min_level),
+            max_level=max(min_level, max_level),
             recursive=raw.get("recursive", True) is not False,
             content=str(raw.get("content") or "").strip(),
         )
