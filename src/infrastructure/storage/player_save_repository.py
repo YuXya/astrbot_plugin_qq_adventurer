@@ -933,6 +933,8 @@ class PlayerSaveRepository:
         except Exception as exc:
             logger.warning(f"备份存档源码失败: {path} {exc}")
 
+    GOLD_PATHS = {"/金币", "/主角/金币", "/gold", "/主角/gold"}
+
     def _apply_state_patches(
         self,
         state: dict[str, Any],
@@ -949,15 +951,33 @@ class PlayerSaveRepository:
                 continue
             if path in {"/level/经验", "/等级/经验", "/主角/等级/经验"}:
                 continue
+            if path in self.GOLD_PATHS:
+                self._apply_gold_patch(state, op, patch.get("value"))
+                continue
             parts = self._split_patch_path(path)
             if not parts:
                 continue
-            if op == "delta":
-                self._apply_delta_patch(state, parts, patch.get("value"))
+            if op == "+":
+                self._apply_add_patch(state, parts, patch.get("value"))
+            elif op == "-":
+                self._apply_sub_patch(state, parts, patch.get("value"))
             elif op in {"replace", "insert"}:
                 self._set_nested_value(state, parts, patch.get("value"))
 
-    def _apply_delta_patch(
+    def _apply_gold_patch(
+        self,
+        state: dict[str, Any],
+        op: str,
+        value: object,
+    ) -> None:
+        delta = self._number_value(value)
+        current = self._number_value(state.get("gold", 0))
+        if op == "+":
+            state["gold"] = max(0, current + delta)
+        elif op == "-":
+            state["gold"] = max(0, current - delta)
+
+    def _apply_add_patch(
         self,
         state: dict[str, Any],
         parts: list[str],
@@ -972,6 +992,22 @@ class PlayerSaveRepository:
             self._ensure_progress_level(parent)
             next_value = self._normalize_progress_value(parent, next_value)
         parent[key] = next_value
+
+    def _apply_sub_patch(
+        self,
+        state: dict[str, Any],
+        parts: list[str],
+        value: object,
+    ) -> None:
+        delta = self._number_value(value)
+        parent = self._ensure_nested_parent(state, parts)
+        key = parts[-1]
+        current = self._number_value(parent.get(key, 0))
+        next_value = current - delta
+        if key in PROGRESS_KEYS:
+            self._ensure_progress_level(parent)
+            next_value = self._normalize_progress_value(parent, next_value)
+        parent[key] = max(0, next_value)
 
     def _set_nested_value(
         self,

@@ -72,7 +72,7 @@ class AdventureDiaryDomainService:
         level_exp += sum(
             self.patch_delta_value(patch.get("value"))
             for patch in patches
-            if patch.get("op") == "delta" and self.is_level_exp_path(patch.get("path"))
+            if patch.get("op") == "+" and self.is_level_exp_path(patch.get("path"))
         )
         level_exp = max(0, level_exp)
         while level_exp >= 100 and level < 100:
@@ -161,7 +161,7 @@ class AdventureDiaryDomainService:
                 continue
             op = str(item.get("op") or "").strip()
             path = str(item.get("path") or "").strip()
-            if op not in {"replace", "insert", "delta"} or not path.startswith("/"):
+            if op not in {"replace", "insert", "+", "-"} or not path.startswith("/"):
                 continue
             patch: dict[str, Any] = {"op": op, "path": path}
             if "value" in item:
