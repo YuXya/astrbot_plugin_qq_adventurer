@@ -309,7 +309,7 @@ class EditableResourceManager:
             "region_book/default.json": (
                 "区域书文件。按区域（如艾尔森林、碧叶镇、德尔地下城）划分条目，每个条目有简略介绍和详细介绍。"
                 "玩家当前区域命中的条目返回详细介绍，其他区域命中的条目返回简略介绍。"
-                "min_level 为等级门槛，玩家等级不足时不命中。排序由网页上的上下位置决定。"
+                "min_level 为等级门槛，max_level 为等级上限，玩家等级不足或超过上限时不命中。排序由网页上的上下位置决定。"
             ),
             self.PROMPT_FILES["reincarnation_prompt"]: (
                 "用于 /异世界转生 的主任务 Prompt。它会组合触发命令、目标群友昵称或 ID、"

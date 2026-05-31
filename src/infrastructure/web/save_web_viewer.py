@@ -420,11 +420,11 @@ class SaveWebViewer:
             else "世界书条目"
         )
         book_hint = (
-            "每个条目会在命中后作为技能说明注入 Prompt。min_level 为等级门槛，不到此等级的玩家无法看到该条目。"
+            "每个条目会在命中后作为技能说明注入 Prompt。min_level 为等级门槛，max_level 为等级上限，不到门槛或超过上限的玩家无法看到该条目。"
             if file_id == "skill_book/default.json"
-            else "条目标题代表可觉醒状态；已拥有状态命中后注入说明，未拥有状态标题进入待觉醒列表。min_level 为等级门槛。"
+            else "条目标题代表可觉醒状态；已拥有状态命中后注入说明，未拥有状态标题进入待觉醒列表。min_level 为等级门槛，max_level 为等级上限。"
             if file_id == "status_book/default.json"
-            else "每个条目会在命中后作为世界背景补充注入 Prompt。min_level 为等级门槛，不到此等级的玩家无法看到该条目。"
+            else "每个条目会在命中后作为世界背景补充注入 Prompt。min_level 为等级门槛，max_level 为等级上限，不到门槛或超过上限的玩家无法看到该条目。"
         )
         storage_key = "qq_adventurer:book:open_entries:" + file_id.replace("/", ":")
         source_url = self._url(
@@ -802,7 +802,7 @@ class SaveWebViewer:
             <h1>{self._e(title)}</h1>
             <p><a href="{self._url(f'/editable?category={self._e(back_category)}')}">返回{self._e(self._editable_category_title(back_category))}</a></p>
             <p class="muted">{self._e(file_id)}</p>
-            <p class="muted">区域书按地区划分条目。玩家当前区域命中的条目返回详细介绍，其他区域命中的条目返回简略介绍。min_level 为等级门槛。排序由网页上下位置决定。</p>
+            <p class="muted">区域书按地区划分条目。玩家当前区域命中的条目返回详细介绍，其他区域命中的条目返回简略介绍。min_level 为等级门槛，max_level 为等级上限。排序由网页上下位置决定。</p>
             <div class="source-actions">
               <a class="button-link secondary-link" href="{source_url}">编辑源码</a>
               <a class="button-link secondary-link" href="{export_url}">导出 JSON</a>
@@ -1310,6 +1310,12 @@ class SaveWebViewer:
                     min_level = int(raw_entry.get("min_level", 1))
                 except (TypeError, ValueError):
                     min_level = 1
+                try:
+                    max_level = int(raw_entry.get("max_level", 100))
+                except (TypeError, ValueError):
+                    max_level = 100
+                if max_level < min_level:
+                    max_level = min_level
                 normalized_entries.append({
                     "id": str(raw_entry.get("id") or f"entry_{e_idx + 1}").strip(),
                     "title": str(raw_entry.get("title") or ""),
@@ -1322,6 +1328,7 @@ class SaveWebViewer:
                     ),
                     "keys": [str(key).strip() for key in keys if str(key).strip()],
                     "min_level": max(1, min_level),
+                    "max_level": max(max(1, min_level), max_level),
                     "brief": str(raw_entry.get("brief") or ""),
                     "content": str(raw_entry.get("content") or ""),
                 })
