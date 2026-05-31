@@ -213,13 +213,15 @@ class PlayerSaveRepository:
 
         # 应用队友等级经验（纯代码，AI 无需输出）
         level_exp_delta = self._extract_level_exp_delta(card.update_patches)
-        if level_exp_delta > 0 and teammate_gold_patches:
-            self._apply_teammate_level_exp(
-                group_id,
-                max(1, min(int(new_level), 100)),
-                level_exp_delta,
-                set(teammate_gold_patches.keys()),
-            )
+        if level_exp_delta > 0:
+            mentioned_names = self._find_mentioned_teammate_names(group_id, card)
+            if mentioned_names:
+                self._apply_teammate_level_exp(
+                    group_id,
+                    max(1, min(int(new_level), 100)),
+                    level_exp_delta,
+                    mentioned_names,
+                )
 
         self.append_log(
             group_id,
@@ -1127,6 +1129,39 @@ class PlayerSaveRepository:
                 f"base={level_exp_delta}, adjusted={adjusted}, "
                 f"Lv.{teammate_level}->Lv.{level}"
             )
+
+    def _find_mentioned_teammate_names(
+        self,
+        group_id: str,
+        card: AdventureDiaryCard,
+    ) -> set[str]:
+        """从 encounter、result、changes 中找出被提及的同群队友名字。"""
+        text_parts = [
+            str(card.encounter or ""),
+            str(card.result or ""),
+        ]
+        if isinstance(card.changes, list):
+            text_parts.extend(str(c) for c in card.changes)
+        mention_text = "\n".join(text_parts)
+        if not mention_text.strip():
+            return set()
+
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return set()
+
+        protagonist = str(card.target_name or "").strip()
+        matched: set[str] = set()
+        for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
+            index = self._read_json(user_dir / "index.json")
+            if not isinstance(index, dict):
+                continue
+            name = str(index.get("target_name") or "").strip()
+            if not name or name == protagonist:
+                continue
+            if name in mention_text:
+                matched.add(name)
+        return matched
 
     def _find_user_dir_by_target_name(
         self,
