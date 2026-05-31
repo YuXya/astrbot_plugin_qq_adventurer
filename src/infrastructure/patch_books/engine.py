@@ -25,8 +25,26 @@ class PatchBookEngine:
     ) -> str:
         book = self._load_book(self.editable_manager.skill_book_path, "技能书")
         entries = self._entries_from_book(book)
-        matched = self._match_entries(
-            entries, self._join_text(scan_parts or []), player_level=player_level,
+        scan_text = self._join_text(scan_parts or [])
+        activated_ids: set[str] = set()
+
+        # 第一轮：扫描原始文本
+        first_round = self._match_entries(
+            entries, scan_text, activated_ids=activated_ids,
+            include_always=True, player_level=player_level,
+        )
+        # 第二轮：用第一轮命中条目的内容做递归扫描
+        recursion_text = self._join_text(
+            entry.content for entry in first_round if entry.recursive
+        )
+        second_round = self._match_entries(
+            entries, recursion_text, activated_ids=activated_ids,
+            include_always=False, player_level=player_level,
+        ) if recursion_text else []
+
+        matched = sorted(
+            first_round + second_round,
+            key=lambda item: (item.min_level, item.id),
         )
         if not matched:
             return ""
@@ -127,9 +145,11 @@ class PatchBookEngine:
         scan_text: str,
         include_always: bool = True,
         player_level: int = 1,
+        activated_ids: set[str] | None = None,
     ) -> list[WorldBookEntry]:
         matched: list[WorldBookEntry] = []
-        activated_ids: set[str] = set()
+        if activated_ids is None:
+            activated_ids = set()
         if not scan_text and not include_always:
             return []
 

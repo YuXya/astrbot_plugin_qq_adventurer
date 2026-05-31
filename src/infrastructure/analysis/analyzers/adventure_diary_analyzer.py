@@ -175,7 +175,8 @@ class AdventureDiaryAnalyzer(BaseAnalyzer[AdventureDiaryCard]):
                 world_book_text,
                 region_book_text,
                 self.patch_book_engine.build_skill_prompt_text(
-                    scan_parts, player_level=current_level,
+                    enriched_scan_parts if cross_hit_parts else scan_parts,
+                    player_level=current_level,
                 ),
                 self.patch_book_engine.build_status_prompt_text(
                     state, player_level=current_level,
