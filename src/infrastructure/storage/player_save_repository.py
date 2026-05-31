@@ -195,7 +195,7 @@ class PlayerSaveRepository:
         state.setdefault("skills", {})
         state.setdefault("quests", [])
         state.setdefault("flags", {})
-        self._apply_state_patches(state, card.update_patches)
+        teammate_gold_patches = self._apply_state_patches(state, card.update_patches)
         card.state_snapshot = self._to_jsonable(state)
         self._atomic_write_json(state_path, state)
         self._write_player_index(
@@ -206,6 +206,20 @@ class PlayerSaveRepository:
             location=state.get("location") or card.location,
             updated_at=now,
         )
+
+        # 应用队友金币补丁
+        if teammate_gold_patches:
+            self._apply_teammate_gold_patches(group_id, teammate_gold_patches)
+
+        # 应用队友等级经验（纯代码，AI 无需输出）
+        level_exp_delta = self._extract_level_exp_delta(card.update_patches)
+        if level_exp_delta > 0 and teammate_gold_patches:
+            self._apply_teammate_level_exp(
+                group_id,
+                max(1, min(int(new_level), 100)),
+                level_exp_delta,
+                set(teammate_gold_patches.keys()),
+            )
 
         self.append_log(
             group_id,
@@ -935,13 +949,29 @@ class PlayerSaveRepository:
 
     GOLD_PATHS = {"/金币", "/主角/金币", "/gold", "/主角/gold"}
 
+    @staticmethod
+    def _is_teammate_gold_path(path: str) -> str | None:
+        """判断路径是否为队友金币路径，返回队友名或 None。"""
+        path = str(path or "").strip()
+        if not path.startswith("/"):
+            return None
+        parts = path.split("/")
+        # /队友名/金币 或 /队友名/gold
+        if len(parts) == 3 and parts[2] in ("金币", "gold"):
+            name = parts[1].strip()
+            if name and name != "主角":
+                return name
+        return None
+
     def _apply_state_patches(
         self,
         state: dict[str, Any],
         patches: list[dict[str, Any]],
-    ) -> None:
+    ) -> dict[str, list[dict[str, Any]]]:
+        """应用状态补丁到 state，返回队友金币补丁 {队友名: [{op, value}, ...]}。"""
+        teammate_gold_patches: dict[str, list[dict[str, Any]]] = {}
         if not isinstance(patches, list):
-            return
+            return teammate_gold_patches
         for patch in patches:
             if not isinstance(patch, dict):
                 continue
@@ -954,6 +984,14 @@ class PlayerSaveRepository:
             if path in self.GOLD_PATHS:
                 self._apply_gold_patch(state, op, patch.get("value"))
                 continue
+            # 检测队友金币路径
+            teammate_name = self._is_teammate_gold_path(path)
+            if teammate_name:
+                if op in {"+", "-"}:
+                    teammate_gold_patches.setdefault(teammate_name, []).append(
+                        {"op": op, "value": patch.get("value")}
+                    )
+                continue
             parts = self._split_patch_path(path)
             if not parts:
                 continue
@@ -963,6 +1001,7 @@ class PlayerSaveRepository:
                 self._apply_sub_patch(state, parts, patch.get("value"))
             elif op in {"replace", "insert"}:
                 self._set_nested_value(state, parts, patch.get("value"))
+        return teammate_gold_patches
 
     def _apply_gold_patch(
         self,
@@ -976,6 +1015,134 @@ class PlayerSaveRepository:
             state["gold"] = max(0, current + delta)
         elif op == "-":
             state["gold"] = max(0, current - delta)
+
+    def _apply_teammate_gold_patches(
+        self,
+        group_id: str,
+        teammate_gold_patches: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        """将队友金币补丁应用到对应队友的存档中。"""
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return
+
+        for teammate_name, patches in teammate_gold_patches.items():
+            if not teammate_name or not patches:
+                continue
+            # 通过玩家索引查找队友
+            target_user_dir = self._find_user_dir_by_target_name(users_dir, teammate_name)
+            if not target_user_dir:
+                logger.debug(f"未找到队友 {teammate_name} 的存档，跳过金币补丁")
+                continue
+            state_path = target_user_dir / "state.json"
+            if not state_path.exists():
+                continue
+            state = self._read_json(state_path)
+            if not isinstance(state, dict):
+                continue
+            state.setdefault("gold", 0)
+            for patch in patches:
+                self._apply_gold_patch(state, patch.get("op"), patch.get("value"))
+            state["updated_at"] = self._now_ms()
+            self._atomic_write_json(state_path, state)
+            logger.info(f"已应用队友 {teammate_name} 的金币补丁: {patches}")
+
+    LEVEL_EXP_PATHS = {"/level/经验", "/等级/经验", "/主角/等级/经验"}
+
+    def _extract_level_exp_delta(self, patches: list[dict[str, Any]]) -> int:
+        """从补丁列表中提取主角获得的等级经验增量总和。"""
+        if not isinstance(patches, list):
+            return 0
+        delta = 0
+        for patch in patches:
+            if not isinstance(patch, dict):
+                continue
+            op = str(patch.get("op") or "").strip()
+            path = str(patch.get("path") or "").strip()
+            if op == "+" and path in self.LEVEL_EXP_PATHS:
+                delta += self._number_value(patch.get("value"))
+        return delta
+
+    def _apply_teammate_level_exp(
+        self,
+        group_id: str,
+        main_level: int,
+        level_exp_delta: int,
+        teammate_names: set[str],
+    ) -> None:
+        """根据主角等级经验，按等级差为队友分配调整后的经验。
+
+        队友比主角低 n 级：经验 × (n + 1)
+        队友比主角高 n 级：经验 ÷ (n + 1)
+        """
+        users_dir = self.root_dir / "groups" / self._safe_id(group_id) / "users"
+        if not users_dir.exists():
+            return
+
+        for name in teammate_names:
+            if not name:
+                continue
+            target_user_dir = self._find_user_dir_by_target_name(users_dir, name)
+            if not target_user_dir:
+                logger.debug(f"未找到队友 {name} 的存档，跳过等级经验")
+                continue
+            state_path = target_user_dir / "state.json"
+            if not state_path.exists():
+                continue
+            state = self._read_json(state_path)
+            if not isinstance(state, dict):
+                continue
+
+            teammate_level = max(1, min(int(state.get("level", 1) or 1), 100))
+            level_diff = main_level - teammate_level
+
+            if level_diff > 0:
+                adjusted = level_exp_delta * (level_diff + 1)
+            elif level_diff < 0:
+                adjusted = int(level_exp_delta / (abs(level_diff) + 1))
+            else:
+                adjusted = level_exp_delta
+
+            if adjusted <= 0:
+                continue
+
+            current_exp = max(0, min(int(state.get("level_exp", 0) or 0), 99))
+            new_exp = current_exp + adjusted
+            level = teammate_level
+
+            while new_exp >= 100 and level < 100:
+                level += 1
+                new_exp -= 100
+
+            if level >= 100:
+                level = 100
+                new_exp = 0
+
+            state["level"] = level
+            state["level_exp"] = max(0, min(new_exp, 99))
+            state["updated_at"] = self._now_ms()
+            self._atomic_write_json(state_path, state)
+            logger.info(
+                f"已应用队友 {name} 的等级经验: "
+                f"base={level_exp_delta}, adjusted={adjusted}, "
+                f"Lv.{teammate_level}->Lv.{level}"
+            )
+
+    def _find_user_dir_by_target_name(
+        self,
+        users_dir: Path,
+        target_name: str,
+    ) -> Path | None:
+        """在用户目录中通过 target_name 查找对应的用户目录。"""
+        if not users_dir.exists():
+            return None
+        for user_dir in sorted(p for p in users_dir.iterdir() if p.is_dir()):
+            index = self._read_json(user_dir / "index.json")
+            if isinstance(index, dict):
+                name = str(index.get("target_name") or "").strip()
+                if name == target_name:
+                    return user_dir
+        return None
 
     def _apply_add_patch(
         self,
